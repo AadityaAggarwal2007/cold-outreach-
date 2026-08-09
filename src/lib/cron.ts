@@ -224,8 +224,8 @@ async function sendNextFollowUp(settings: {
     const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
     const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
 
-    // Attach resume to FU1 only (template says 'I've attached my resume again')
-    const resumePath = round === 1 ? path.join(process.cwd(), 'public', 'resume.pdf') : undefined
+    // Attach resume to all follow-ups (only 51KB, no spam risk)
+    const resumePath = path.join(process.cwd(), 'public', 'resume.pdf')
 
     const success = await sendEmail({
       to: contact.email, toName: contact.name,
