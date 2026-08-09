@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { prisma } from './db'
+import { DEFAULT_SYSTEM_PROMPT } from './systemPrompt'
 
 function getClient(settings?: { aiBaseUrl: string; aiModel: string } | null) {
   return new OpenAI({
