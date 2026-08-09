@@ -5,14 +5,14 @@ import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 
 let cronStarted  = false
-let isSending    = false  // guard against concurrent sends
+let isSending    = false
 let sendTimer:  ReturnType<typeof setInterval> | null = null
 let inboxTimer: ReturnType<typeof setInterval> | null = null
 
-// Follow-up schedule: calendar days after initial email
-// Day 4 → Day 8 → Day 15 → Day 22 → Day 30
-// e.g. Mon initial → Fri follow-up (skips weekend automatically)
-const DEFAULT_FOLLOWUP_DAYS = [4, 8, 15, 22, 30]
+// Total follow-up rounds (after initial = round 0)
+// Round order: initial → FU1 → FU2 → FU3 → FU4 → FU5 → done
+// Each round only starts after the PREVIOUS round is 100% complete
+const TOTAL_FOLLOWUP_ROUNDS = 5
 
 export function startCron() {
   if (cronStarted) return
@@ -181,42 +181,40 @@ async function sendNextInitial(settings: {
   return false
 }
 
-// ─── Send one follow-up email ─────────────────────────────────────────────────
+// ─── Send one follow-up email (completion-based, no time gap) ────────────────
+// Only enters round N after round N-1 is 100% complete across all contacts.
 async function sendNextFollowUp(settings: {
   gmailUser: string
   pixelBaseUrl: string
   sentToday: number
   dailyLimit: number
-  followUpDays: string
 }): Promise<boolean> {
-  const followUpDays = settings.followUpDays
-    .split(',').map(d => parseInt(d.trim())).filter(Boolean)
+  // Check follow-up rounds in order: 1 → 2 → 3 → 4 → 5
+  // For each round, find the oldest-waiting contact eligible for that round.
+  // If a round has any eligible contacts → send to them (don't skip to next round).
+  // Only when a round is fully exhausted do we move to the next.
 
-  // Check each follow-up round in order (earliest first)
-  for (let i = 0; i < followUpDays.length; i++) {
-    const followUpNum  = i + 1
-    const daysRequired = followUpDays[i]
-    const cutoff       = new Date(Date.now() - daysRequired * 24 * 60 * 60 * 1000)
+  for (let round = 1; round <= TOTAL_FOLLOWUP_ROUNDS; round++) {
+    const templateType = `followup_${round}`
+    const template = await prisma.template.findFirst({ where: { type: templateType } })
 
-    // Find the contact who waited the longest (order by lastSentAt ASC)
-    // This ensures Day 1 contacts get follow-ups before Day 2, Day 2 before Day 3, etc.
+    // Find contact eligible for this round:
+    // followUpCount === round means they've received exactly `round` emails so far
+    // (followUpCount 1 = initial sent, 2 = FU1 sent, etc.)
     const contact = await prisma.contact.findFirst({
       where: {
         status: 'sent',
-        followUpCount: followUpNum,
-        lastSentAt: { lte: cutoff },
+        followUpCount: round,
         company: { repliedAt: null },
       },
       include: { company: true },
-      orderBy: { lastSentAt: 'asc' },
+      orderBy: { lastSentAt: 'asc' },  // oldest first = same order as initials
     })
 
-    if (!contact) continue
+    if (!contact) continue  // this round fully done → check next round
 
-    const templateType = `followup_${followUpNum}`
-    const template = await prisma.template.findFirst({ where: { type: templateType } })
     if (!template) {
-      console.warn(`[Cron] No template for ${templateType} — skipping this contact for now`)
+      console.warn(`[Cron] No template for ${templateType} — skipping round ${round}`)
       continue
     }
 
@@ -237,7 +235,8 @@ async function sendNextFollowUp(settings: {
         data: {
           followUpCount: newCount,
           lastSentAt:    new Date(),
-          status:        newCount > followUpDays.length ? 'stopped' : 'sent',
+          // Stop after all 5 follow-up rounds sent (followUpCount becomes 6)
+          status:        newCount > TOTAL_FOLLOWUP_ROUNDS ? 'stopped' : 'sent',
         },
       })
       await prisma.emailLog.create({
@@ -247,7 +246,7 @@ async function sendNextFollowUp(settings: {
         where: { id: 1 },
         data: { sentToday: { increment: 1 } },
       })
-      console.log(`[Cron] followup_${followUpNum} → ${contact.email}`)
+      console.log(`[Cron] ${templateType} → ${contact.email} (round ${round}/${TOTAL_FOLLOWUP_ROUNDS})`)
       return true
     }
   }
