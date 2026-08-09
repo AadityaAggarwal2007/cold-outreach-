@@ -31,7 +31,6 @@ function CodexStatus() {
       const d = await r.json()
       setLoginOutput(d.output || '')
       if (d.authUrl) setAuthUrl(d.authUrl)
-      // Re-check status after login attempt
       setTimeout(checkStatus, 3000)
     } catch {
       setLoginOutput('Error reaching server. Is Codex gateway running?')
@@ -52,7 +51,7 @@ function CodexStatus() {
         <div className="flex gap-2 items-center">
           <span className={`pulse-dot ${status === 'online' ? '' : status === 'offline' ? 'red' : 'yellow'}`} />
           <span style={{ fontWeight: 700, fontSize: 13.5, color: status === 'online' ? 'var(--green)' : status === 'offline' ? 'var(--red)' : 'var(--yellow)' }}>
-            {status === 'online' ? `Gateway Online` : status === 'offline' ? 'Gateway Offline' : 'Checking...'}
+            {status === 'online' ? 'Gateway Online' : status === 'offline' ? 'Gateway Offline' : 'Checking...'}
           </span>
           {status === 'online' && models[0] && (
             <span style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-700)', padding: '2px 8px', borderRadius: 20 }}>
@@ -71,11 +70,10 @@ function CodexStatus() {
 
       {status === 'offline' && !logging && (
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-          Gateway not running. On your VPS: <code style={{ color: 'var(--text-dim)' }}>npx openai-oauth@latest --detach --port 10531</code>
+          Gateway not running. On your VPS: <code style={{ color: 'var(--text-dim)' }}>pm2 start "npx openai-oauth@latest --port 10531" --name "codex-gateway"</code>
         </div>
       )}
 
-      {/* Auth URL Modal */}
       {authUrl && (
         <div style={{ marginTop: 12, padding: '12px 14px', background: 'var(--bg-700)', borderRadius: 8, border: '1px solid var(--border-light)' }}>
           <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>✅ Open this URL in your browser to log in:</div>
@@ -84,7 +82,7 @@ function CodexStatus() {
             {authUrl}
           </a>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-            After logging in, come back and click ↻ Refresh to confirm gateway is online.
+            After logging in, click ↻ Refresh to confirm gateway is online.
           </div>
         </div>
       )}
@@ -101,15 +99,15 @@ function CodexStatus() {
 interface Settings {
   gmailUser: string; gmailAppPass: string; dailyLimit: number;
   pixelBaseUrl: string; aiBaseUrl: string; aiModel: string;
-  sendingPaused: boolean; followUpDays: string;
+  systemPrompt: string; sendingPaused: boolean;
   sendWindowStart: string; sendWindowEnd: string;
 }
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Partial<Settings>>({})
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [toast, setToast]       = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -154,7 +152,7 @@ export default function SettingsPage() {
 
       <div className="page-body" style={{ maxWidth: 720 }}>
 
-        {/* Gmail SMTP */}
+        {/* Gmail */}
         <div className="card mb-4">
           <div className="card-header"><span className="card-title">📧 Gmail / Google Workspace</span></div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
@@ -179,20 +177,31 @@ export default function SettingsPage() {
         {/* Send Limits */}
         <div className="card mb-4">
           <div className="card-header"><span className="card-title">⚡ Send Limits & Schedule</span></div>
+
+          {/* How it works */}
+          <div style={{ padding: '12px 14px', background: 'rgba(99,102,241,0.08)', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)', marginBottom: 20, fontSize: 13 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text)' }}>📋 How sending works</div>
+            <div style={{ color: 'var(--text-muted)', lineHeight: 1.8 }}>
+              <strong style={{ color: 'var(--text-dim)' }}>Round 1 (Initials):</strong> Every contact gets their first email, 499/day, Mon–Fri only.<br/>
+              <strong style={{ color: 'var(--text-dim)' }}>Round 2–6 (Follow-ups):</strong> Once ALL initials are sent, follow-up 1 starts immediately — same day if slots remain. Each round starts only after the previous is 100% complete.<br/>
+              <strong style={{ color: 'var(--text-dim)' }}>Bounced:</strong> Marked automatically, excluded from all future rounds.<br/>
+              <strong style={{ color: 'var(--text-dim)' }}>Replied:</strong> Company's contacts stopped automatically when they reply.
+            </div>
+          </div>
+
           <div className="grid-2">
             <div className="form-group">
               <label className="form-label">Daily Email Limit</label>
               <input className="input" type="number" min={1} max={2000}
-                value={settings.dailyLimit || 900}
+                value={settings.dailyLimit ?? 499}
                 onChange={e => set('dailyLimit', parseInt(e.target.value))} />
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Google Workspace max: 2000/day</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Max 499 recommended for college Workspace</span>
             </div>
             <div className="form-group">
-              <label className="form-label">Follow-up Days (comma-separated)</label>
-              <input className="input" value={settings.followUpDays || '3,7,14,21,30'}
-                onChange={e => set('followUpDays', e.target.value)}
-                placeholder="3,7,14,21,30" />
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Days after initial email for each follow-up</span>
+              <label className="form-label">Total Follow-up Rounds</label>
+              <input className="input" value="5 rounds (FU1 → FU2 → FU3 → FU4 → FU5)" readOnly
+                style={{ opacity: 0.5, cursor: 'not-allowed' }} />
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Fixed: completion-based, no day gaps</span>
             </div>
             <div className="form-group">
               <label className="form-label">Send Window Start (IST, HH:MM)</label>
@@ -206,7 +215,7 @@ export default function SettingsPage() {
               <input className="input" value={settings.sendWindowEnd || '11:59'}
                 onChange={e => set('sendWindowEnd', e.target.value)}
                 placeholder="11:59" />
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No emails sent after this time (IST). Currently set to 11:59 AM.</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>No emails sent after this time (IST)</span>
             </div>
           </div>
         </div>
@@ -216,28 +225,26 @@ export default function SettingsPage() {
           <div className="card-header"><span className="card-title">👁 Email Open Tracking</span></div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
             Pixels are served as <code style={{ color: 'var(--primary)', background: 'var(--bg-700)', padding: '1px 6px', borderRadius: 4 }}>/r/&#123;id&#125;</code> — clean URLs that don't trigger spam filters.
-            Set your VPS domain/IP below.
           </p>
           <div className="form-group">
             <label className="form-label">VPS Pixel Base URL</label>
             <input className="input" value={settings.pixelBaseUrl || ''}
               onChange={e => set('pixelBaseUrl', e.target.value)}
-              placeholder="https://yourdomain.com" />
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Buy any cheap domain and point it to your VPS IP</span>
+              placeholder="https://cdnassets.store" />
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Your VPS domain pointed to {settings.pixelBaseUrl || 'your VPS IP'}</span>
           </div>
           <div style={{ padding: '12px 14px', background: 'var(--bg-700)', borderRadius: 8, fontSize: 12.5, color: 'var(--text-dim)' }}>
-            Pixel URL example: <code style={{ color: 'var(--primary)' }}>{settings.pixelBaseUrl || 'https://yourdomain.com'}/r/abc123</code>
+            Pixel URL example: <code style={{ color: 'var(--primary)' }}>{settings.pixelBaseUrl || 'https://cdnassets.store'}/r/abc123</code>
           </div>
         </div>
 
         {/* AI Settings */}
         <div className="card mb-4">
-          <div className="card-header"><span className="card-title">🤖 Codex-oth AI Gateway</span></div>
+          <div className="card-header"><span className="card-title">🤖 AI Gateway & Persona</span></div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-            Your Codex-oth gateway (ChatGPT Plus proxy). Must be running on the VPS at the specified URL.
+            ChatGPT gateway running on your VPS. Used to classify incoming emails and draft personalised replies.
           </p>
 
-          {/* Gateway Status */}
           <CodexStatus />
 
           <div className="grid-2" style={{ marginTop: 16 }}>
@@ -260,13 +267,30 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.04)', borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', fontSize: 12.5 }}>
-            <strong style={{ color: 'var(--text)' }}>VPS setup:</strong> Run{' '}
-            <code style={{ color: 'var(--text-dim)', background: 'var(--bg-700)', padding: '1px 5px', borderRadius: 3 }}>npx openai-oauth@latest --detach --port 10531</code>{' '}
-            on your VPS first, then use the button above to link your account.
+          {/* System Prompt */}
+          <div className="form-group" style={{ marginTop: 4 }}>
+            <label className="form-label">AI System Prompt (Aaditya's Persona)</label>
+            <textarea
+              className="textarea"
+              rows={8}
+              value={settings.systemPrompt || ''}
+              onChange={e => set('systemPrompt', e.target.value)}
+              placeholder={`Tell the AI who you are and what you're looking for. Example:
+
+You are helping Aaditya Aggarwal, a CS student at SGGSCC, University of Delhi.
+
+He is looking for: software engineering internships, product management internships, operations internships at real companies.
+
+He is NOT interested in: IBM SkillsBuild, Google Explorer programs, fellowship programs, volunteer roles, unpaid positions, MLM roles.
+
+INTERNSHIP = genuine HR reply, interview invite, or internship offer
+OTHER = newsletters, security alerts, mass programs, spam`}
+            />
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              This tells the AI what to classify as internship-related and how to write replies as you. Leave blank to use the smart default.
+            </span>
           </div>
         </div>
-
 
         <button className="btn btn-primary" onClick={save} disabled={saving} style={{ width: '100%', justifyContent: 'center' }}>
           {saving ? '⏳ Saving...' : '💾 Save All Settings'}
