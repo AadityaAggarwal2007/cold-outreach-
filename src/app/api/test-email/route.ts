@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/mailer'
 import { v4 as uuidv4 } from 'uuid'
+import path from 'path'
 
 // ─── Inline personalisation (mirrors cron.ts) ─────────────────────────────────
 function personalize(template: string, vars: { companyName: string; hrName: string; linkedinUrl: string }) {
@@ -60,6 +61,8 @@ export async function POST(req: NextRequest) {
       const subject = `[TEST] ${personalize(tpl.subject, { ...vars, hrName: toName || 'Test Recipient' })}`
       const pixelId = uuidv4()
 
+      const resumePath = path.join(process.cwd(), 'public', 'resume.pdf')
+
       const ok = await sendEmail({
         to: toEmail,
         toName: toName || 'Test',
@@ -67,6 +70,7 @@ export async function POST(req: NextRequest) {
         html,
         pixelId,
         pixelBaseUrl: settings.pixelBaseUrl || '',
+        resumePath,
       })
 
       results.push({ type, ok })
