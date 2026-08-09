@@ -66,6 +66,43 @@ export async function syncInbox() {
       const fromName = parsed.from?.value?.[0]?.name || fromAddr
       const subject  = parsed.subject || '(No Subject)'
 
+      // ── Bounce / NDR detection ────────────────────────────────────────────────
+      // Gmail sends NDR (non-delivery report) from mailer-daemon when an email bounces
+      const isNDR = fromAddr.includes('mailer-daemon') ||
+                    fromAddr.includes('postmaster@') ||
+                    fromAddr.startsWith('postmaster') ||
+                    subject.toLowerCase().includes('delivery status notification') ||
+                    subject.toLowerCase().includes('mail delivery failed') ||
+                    subject.toLowerCase().includes('delivery failure') ||
+                    subject.toLowerCase().includes('undeliverable')
+
+      if (isNDR) {
+        // Extract the bounced email address from the body
+        const bouncedAddr = extractBouncedEmail(parsed.text || parsed.html || '')
+        if (bouncedAddr) {
+          const contact = await prisma.contact.findFirst({ where: { email: bouncedAddr } })
+          if (contact) {
+            await prisma.contact.update({
+              where: { id: contact.id },
+              data: { status: 'bounced', stoppedAt: new Date() },
+            })
+            console.log(`[IMAP] Bounce detected: ${bouncedAddr} marked as bounced`)
+          }
+        }
+        // Save NDR as bounced incoming email for visibility in inbox
+        await prisma.incomingEmail.create({
+          data: {
+            fromEmail: fromAddr, fromName: 'Mail Delivery (Bounce)',
+            subject: `⚠️ Bounce: ${bouncedAddr || subject}`,
+            body: `Email to ${bouncedAddr || 'unknown'} could not be delivered.\n\n` +
+                  (parsed.text || '').substring(0, 2000),
+            messageId,
+            aiStatus: 'bounced',
+          },
+        }).catch(() => {}) // ignore if already exists
+        continue
+      }
+
       // Prefer plain text, fall back to HTML-stripped text
       let body = ''
       if (parsed.text) {
@@ -131,7 +168,31 @@ export async function syncInbox() {
   }
 }
 
+
+// ─── Extract bounced email from NDR body ───────────────────────────────────────
+function extractBouncedEmail(body: string): string | null {
+  // Common patterns in Gmail NDRs:
+  // "The email account that you tried to reach does not exist. foo@bar.com"
+  // "Final-Recipient: rfc822; foo@bar.com"
+  // "Original-Recipient: rfc822;foo@bar.com"
+  const patterns = [
+    /Final-Recipient:\s*rfc822;\s*([^\s@]+@[^\s@]+\.[^\s@]+)/i,
+    /Original-Recipient:\s*rfc822;\s*([^\s@]+@[^\s@]+\.[^\s@]+)/i,
+    /X-Failed-Recipients:\s*([^\s@]+@[^\s@]+\.[^\s@]+)/i,
+    /Failed to deliver to\s+['"<]?([^\s@'"<>]+@[^\s@'"<>]+\.[^\s@'"<>]+)['"<>]?/i,
+    /could not deliver.*?to\s+([^\s@]+@[^\s@]+\.[^\s@]+)/i,
+    /\b([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})\b/,  // first email in body
+  ]
+
+  for (const pattern of patterns) {
+    const match = body.match(pattern)
+    if (match?.[1]) return match[1].toLowerCase().trim()
+  }
+  return null
+}
+
 // ─── Retry classification for stuck "new" emails ──────────────────────────────
+
 // Runs every cycle to pick up emails where Codex was offline during first sync
 export async function retryPendingClassifications() {
   try {
