@@ -101,3 +101,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Import failed' }, { status: 500 })
   }
 }
+
+// DELETE — wipe all contacts, email logs, and companies for a fresh import
+export async function DELETE(req: NextRequest) {
+  const authError = await requireAuth(req)
+  if (authError) return authError
+
+  try {
+    // Delete in dependency order (EmailLog → Contact → Company)
+    const [logs, contacts, companies] = await Promise.all([
+      prisma.emailLog.deleteMany({}),
+      prisma.contact.deleteMany({}),
+    ]).then(async ([logs, contacts]) => {
+      const companies = await prisma.company.deleteMany({})
+      return [logs, contacts, companies]
+    })
+
+    return NextResponse.json({
+      success: true,
+      deleted: { emailLogs: logs.count, contacts: contacts.count, companies: companies.count },
+      message: `Cleared ${contacts.count} contacts from ${companies.count} companies`,
+    })
+  } catch (err) {
+    console.error('[Import/DELETE] Error:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
+  }
+}

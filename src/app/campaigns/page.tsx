@@ -167,6 +167,8 @@ export default function CampaignsPage() {
   const resumeRef = useRef<HTMLInputElement>(null)
   const [resumeName, setResumeName] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [clearing, setClearing]   = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type }); setTimeout(() => setToast(null), 3500)
@@ -217,6 +219,20 @@ export default function CampaignsPage() {
     if (r.ok) { setImportResult(d); showToast(`✅ Imported ${d.imported} contacts from ${d.companies} companies!`); loadStats() }
     else showToast('Import failed: ' + d.error, 'error')
     setImporting(false)
+  }
+
+  async function clearAllContacts() {
+    setClearing(true)
+    const r = await fetch('/api/import', { method: 'DELETE' })
+    const d = await r.json()
+    if (r.ok) {
+      showToast(`🗑 Cleared ${d.deleted.contacts} contacts from ${d.deleted.companies} companies`)
+      setCompanies([]); setCompTotal(0); setImportResult(null); setSelectedFile(null)
+      loadStats()
+    } else {
+      showToast('Clear failed: ' + d.error, 'error')
+    }
+    setClearing(false); setConfirmClear(false)
   }
 
   async function uploadResume() {
@@ -398,6 +414,37 @@ export default function CampaignsPage() {
               </button>
               <div style={{ fontSize: 12, color:'var(--text-muted)' }}>
                 {resumeName ? <span style={{ color:'var(--green)' }}>✅ Uploaded: {resumeName}</span> : <>Current: <code style={{ color:'var(--primary)' }}>public/resume.pdf</code></>}
+              </div>
+            </div>
+
+            {/* ─── Danger Zone ─── */}
+            <div className="card" style={{ gridColumn:'1/-1', border:'1px solid rgba(239,68,68,0.35)', background:'rgba(239,68,68,0.04)' }}>
+              <div className="card-header"><span className="card-title" style={{ color:'#ef4444' }}>⚠️ Danger Zone</span></div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 14 }}>Clear All Contacts &amp; Companies</div>
+                  <div style={{ fontSize: 13, color:'var(--text-muted)', marginTop: 4 }}>
+                    Permanently deletes all {stats?.totalContacts?.toLocaleString() || 0} contacts, {stats?.totalCompanies?.toLocaleString() || 0} companies, and all email logs from the database.
+                    This cannot be undone. Use this to start fresh with a new CSV.
+                  </div>
+                </div>
+                {!confirmClear ? (
+                  <button className="btn" style={{ background:'rgba(239,68,68,0.15)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.4)', whiteSpace:'nowrap' }}
+                    onClick={() => setConfirmClear(true)}>
+                    🗑 Clear All Data
+                  </button>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap: 8, alignItems:'flex-end' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color:'#ef4444' }}>Are you sure? This deletes everything from the DB.</div>
+                    <div style={{ display:'flex', gap: 8 }}>
+                      <button className="btn btn-ghost btn-sm" onClick={() => setConfirmClear(false)}>Cancel</button>
+                      <button className="btn btn-sm" style={{ background:'#ef4444', color:'#fff', fontWeight: 700 }}
+                        onClick={clearAllContacts} disabled={clearing}>
+                        {clearing ? '⏳ Deleting...' : '🗑 Yes, Delete Everything'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
