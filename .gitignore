@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Database — never commit live data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Resume — upload separately to VPS
+public/resume.pdf

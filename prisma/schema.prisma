@@ -1,0 +1,106 @@
+// InternReach CRM — Prisma Schema
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Company {
+  id         Int       @id @default(autoincrement())
+  name       String    @unique
+  tier       String?   // "High - Converted/Hired", "Medium", "Low" etc.
+  statusSeen String?   // Raw status from Excel
+  repliedAt  DateTime?
+  stage      String    @default("pending") // pending | active | replied | interview | rejected
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  contacts       Contact[]
+  incomingEmails IncomingEmail[]
+}
+
+model Contact {
+  id            Int       @id @default(autoincrement())
+  companyId     Int
+  name          String
+  email         String    @unique
+  phone         String?
+  status        String    @default("pending") // pending | sent | replied | stopped | bounced
+  followUpCount Int       @default(0)         // 0=not sent, 1=initial sent, 2-6=follow-ups sent
+  lastSentAt    DateTime?
+  stoppedAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id])
+  emailLogs EmailLog[]
+}
+
+model EmailLog {
+  id         Int       @id @default(autoincrement())
+  contactId  Int
+  type       String    // "initial" | "followup_1" | "followup_2" | ... | "followup_5"
+  subject    String
+  body       String
+  sentAt     DateTime  @default(now())
+  openedAt   DateTime?
+  openCount  Int       @default(0)
+  pixelId    String    @unique @default("")
+  status     String    @default("sent") // sent | opened | bounced
+
+  contact Contact @relation(fields: [contactId], references: [id])
+}
+
+model IncomingEmail {
+  id           Int       @id @default(autoincrement())
+  companyId    Int?
+  fromEmail    String
+  fromName     String?
+  subject      String
+  body         String
+  receivedAt   DateTime  @default(now())
+  aiDraftReply String?
+  aiStatus     String    @default("new") // new | classifying | classified | draft_ready | replied | irrelevant
+  replied      Boolean   @default(false)
+  repliedAt    DateTime?
+  messageId    String?   @unique       // IMAP message ID (dedup)
+
+  company Company? @relation(fields: [companyId], references: [id])
+}
+
+model Template {
+  id        Int      @id @default(autoincrement())
+  name      String
+  type      String   @unique // "initial" | "followup_1" | "followup_2" | "followup_3" | "followup_4" | "followup_5"
+  subject   String
+  htmlBody  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Settings {
+  id              Int      @id @default(1)
+  gmailUser       String   @default("")
+  gmailAppPass    String   @default("")      // stored plaintext in SQLite (secured by server)
+  dailyLimit      Int      @default(900)
+  sentToday       Int      @default(0)
+  lastResetDate   String   @default("")      // YYYY-MM-DD
+  pixelBaseUrl    String   @default("")      // e.g. https://cdnassets.store
+  aiBaseUrl       String   @default("http://localhost:10531/v1")
+  aiModel         String   @default("gpt-5.6-sol")
+  sendingPaused   Boolean  @default(false)
+  followUpDays    String   @default("3,7,14,21,30") // comma-separated days after initial
+  sendWindowStart String   @default("10:30")         // HH:MM in IST — emails start sending
+  sendWindowEnd   String   @default("11:59")         // HH:MM in IST — emails stop sending
+  updatedAt       DateTime @updatedAt
+}
+
+model DailySendLog {
+  id      Int      @id @default(autoincrement())
+  date    String                              // YYYY-MM-DD
+  count   Int      @default(0)
+  createdAt DateTime @default(now())
+}
