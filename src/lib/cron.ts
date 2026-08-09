@@ -270,10 +270,10 @@ function personalizeTemplate(
     // Company name — bold in output
     .replace(/\{\{Company Name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
     .replace(/\{\{company_name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
-    // LinkedIn — clickable link
+    // LinkedIn — clickable hyperlink showing "LinkedIn" text (not the raw URL)
     .replace(/\{\{LinkedIn\}\}/gi,
       vars.linkedinUrl
-        ? `<a href="${vars.linkedinUrl}" style="color:#2563eb">${vars.linkedinUrl}</a>`
+        ? `<a href="${vars.linkedinUrl}" style="color:#2563eb;text-decoration:none">LinkedIn</a>`
         : '')
     // **text** — bold (markdown-style in templates)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')

@@ -13,7 +13,7 @@ function personalize(template: string, vars: { companyName: string; hrName: stri
     .replace(/\{\{company_name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
     .replace(/\{\{LinkedIn\}\}/gi,
       vars.linkedinUrl
-        ? `<a href="${vars.linkedinUrl}" style="color:#2563eb">${vars.linkedinUrl}</a>`
+        ? `<a href="${vars.linkedinUrl}" style="color:#2563eb;text-decoration:none">LinkedIn</a>`
         : '')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 }
