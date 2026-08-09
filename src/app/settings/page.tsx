@@ -289,16 +289,14 @@ export default function SettingsPage() {
               rows={8}
               value={settings.systemPrompt || ''}
               onChange={e => set('systemPrompt', e.target.value)}
-              placeholder={`Tell the AI who you are and what you're looking for. Example:
+              placeholder={`Leave blank to use the smart default (recommended).
 
-You are helping Aaditya Aggarwal, a CS student at SGGSCC, University of Delhi.
+Only fill this if you want to override. Example:
 
-He is looking for: software engineering internships, product management internships, operations internships at real companies.
-
-He is NOT interested in: IBM SkillsBuild, Google Explorer programs, fellowship programs, volunteer roles, unpaid positions, MLM roles.
-
-INTERNSHIP = genuine HR reply, interview invite, or internship offer
-OTHER = newsletters, security alerts, mass programs, spam`}
+You are helping Aaditya Aggarwal, a B.Com student at SGGSCC, University of Delhi.
+He wants: data analytics, operations, product management internships.
+He does NOT want: IBM SkillsBuild, NGO fellowships, MLM, volunteer roles.
+Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
             />
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               This tells the AI what to classify as internship-related and how to write replies as you. Leave blank to use the smart default.
