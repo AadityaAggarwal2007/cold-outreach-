@@ -109,6 +109,13 @@ export default function SettingsPage() {
   const [saving, setSaving]     = useState(false)
   const [toast, setToast]       = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
+  // Test email state
+  const [testEmail,   setTestEmail]   = useState('')
+  const [testName,    setTestName]    = useState('Test Recipient')
+  const [testCompany, setTestCompany] = useState('Test Company')
+  const [testSending, setTestSending] = useState(false)
+  const [testResult,  setTestResult]  = useState<string | null>(null)
+
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
@@ -297,6 +304,74 @@ OTHER = newsletters, security alerts, mass programs, spam`}
               This tells the AI what to classify as internship-related and how to write replies as you. Leave blank to use the smart default.
             </span>
           </div>
+        </div>
+
+        {/* ─── Test Email ─────────────────────────────────────────────────── */}
+        <div className="card mb-4" style={{ border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.04)' }}>
+          <div className="card-header"><span className="card-title">🧪 Send Test Emails</span></div>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
+            Sends all 6 templates (Initial + FU1–FU5) <strong>instantly</strong> to any email.
+            Bypasses the send window, daily limit, and database. Use to verify templates look correct.
+          </p>
+          <div className="grid-2">
+            <div className="form-group">
+              <label className="form-label">Your Email (recipient)</label>
+              <input className="input" type="email" value={testEmail}
+                onChange={e => setTestEmail(e.target.value)}
+                placeholder="aadityaaggarwal3526@gmail.com" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Fake Recipient Name</label>
+              <input className="input" value={testName}
+                onChange={e => setTestName(e.target.value)}
+                placeholder="Rajnesh Khosla" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Fake Company Name</label>
+              <input className="input" value={testCompany}
+                onChange={e => setTestCompany(e.target.value)}
+                placeholder="FICCI" />
+            </div>
+          </div>
+
+          <button
+            className="btn"
+            disabled={testSending || !testEmail}
+            style={{ background: '#f59e0b', color: '#000', fontWeight: 700, marginTop: 4 }}
+            onClick={async () => {
+              setTestSending(true)
+              setTestResult('⏳ Sending all 6 emails...')
+              try {
+                const r = await fetch('/api/test-email', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ toEmail: testEmail, toName: testName, companyName: testCompany }),
+                })
+                const d = await r.json()
+                if (d.success) {
+                  setTestResult(`✅ ${d.message}\n\n` +
+                    d.results.map((x: {type:string;ok:boolean}) => `${x.ok ? '✅' : '❌'} ${x.type}`).join('\n'))
+                } else {
+                  setTestResult(`❌ Error: ${d.error}`)
+                }
+              } catch (e) {
+                setTestResult(`❌ Network error: ${e}`)
+              }
+              setTestSending(false)
+            }}>
+            {testSending ? '⏳ Sending...' : '🚀 Send All 6 Test Emails Now'}
+          </button>
+
+          {testResult && (
+            <div style={{
+              marginTop: 14, padding: '12px 14px',
+              background: 'var(--bg-700)', borderRadius: 8,
+              fontSize: 13, fontFamily: 'monospace',
+              whiteSpace: 'pre-wrap', color: 'var(--text-dim)'
+            }}>
+              {testResult}
+            </div>
+          )}
         </div>
 
         <button className="btn btn-primary" onClick={save} disabled={saving} style={{ width: '100%', justifyContent: 'center' }}>
