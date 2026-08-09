@@ -39,25 +39,39 @@ export async function GET(req: NextRequest) {
   const settings = await prisma.settings.findFirst({ where: { id: 1 } })
 
   const [
+    totalCompanies,
+    totalContacts,
     pendingInitial,
-    pendingFollowUps,
+    sentContacts,
     stoppedContacts,
+    bouncedContacts,
+    openedContacts,
+    repliedCompanies,
+    pendingFollowUps,
   ] = await Promise.all([
-    prisma.contact.count({ where: { status: 'pending', company: { repliedAt: null } } }),
-    prisma.contact.count({
-      where: {
-        status: 'sent',
-        followUpCount: { lt: 6 },
-        company: { repliedAt: null },
-      },
-    }),
+    prisma.company.count(),
+    prisma.contact.count(),
+    prisma.contact.count({ where: { status: 'pending' } }),
+    prisma.contact.count({ where: { status: 'sent' } }),
     prisma.contact.count({ where: { status: 'stopped' } }),
+    prisma.contact.count({ where: { status: 'bounced' } }),
+    prisma.emailLog.count({ where: { openedAt: { not: null } } }),
+    prisma.company.count({ where: { repliedAt: { not: null } } }),
+    prisma.contact.count({
+      where: { status: 'sent', followUpCount: { lt: 6 }, company: { repliedAt: null } },
+    }),
   ])
 
   return NextResponse.json({
     settings,
+    totalCompanies,
+    totalContacts,
     pendingInitial,
-    pendingFollowUps,
+    sentContacts,
     stoppedContacts,
+    bouncedContacts,
+    openedContacts,
+    repliedCompanies,
+    pendingFollowUps,
   })
 }
