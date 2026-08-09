@@ -89,6 +89,7 @@ model Settings {
   sentToday       Int      @default(0)
   lastResetDate   String   @default("")      // YYYY-MM-DD
   pixelBaseUrl    String   @default("")      // e.g. https://cdnassets.store
+  linkedinUrl     String   @default("")      // injected into email templates as {{LinkedIn}}
   aiBaseUrl       String   @default("http://localhost:10531/v1")
   aiModel         String   @default("gpt-5.6-sol")
   systemPrompt    String   @default("")             // Aaditya's persona for AI replies

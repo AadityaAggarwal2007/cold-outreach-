@@ -129,6 +129,7 @@ async function processSendQueue() {
 async function sendNextInitial(settings: {
   gmailUser: string
   pixelBaseUrl: string
+  linkedinUrl: string
   sentToday: number
   dailyLimit: number
 }): Promise<boolean> {
@@ -151,8 +152,8 @@ async function sendNextInitial(settings: {
   }
 
   const pixelId = uuidv4()
-  const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name })
-  const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name })
+  const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
+  const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
 
   const resumePath = path.join(process.cwd(), 'public', 'resume.pdf')
   const success = await sendEmail({
@@ -186,6 +187,7 @@ async function sendNextInitial(settings: {
 async function sendNextFollowUp(settings: {
   gmailUser: string
   pixelBaseUrl: string
+  linkedinUrl: string
   sentToday: number
   dailyLimit: number
 }): Promise<boolean> {
@@ -219,8 +221,8 @@ async function sendNextFollowUp(settings: {
     }
 
     const pixelId = uuidv4()
-    const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name })
-    const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name })
+    const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
+    const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
 
     const success = await sendEmail({
       to: contact.email, toName: contact.name,
@@ -257,14 +259,24 @@ async function sendNextFollowUp(settings: {
 // ─── Template personalisation ─────────────────────────────────────────────────
 function personalizeTemplate(
   template: string,
-  vars: { companyName: string; hrName: string }
+  vars: { companyName: string; hrName: string; linkedinUrl: string }
 ): string {
   return template
-    .replace(/\{\{Company Name\}\}/gi, vars.companyName)
-    .replace(/\{\{HR Name\}\}/gi,      vars.hrName)
-    .replace(/\{\{company_name\}\}/gi, vars.companyName)
-    .replace(/\{\{hr_name\}\}/gi,      vars.hrName)
-    .replace(/\{\{name\}\}/gi,         vars.hrName)
+    // Recipient name — bold in output
+    .replace(/\{\{Recipient Name\}\}/gi, `<strong>${vars.hrName}</strong>`)
+    .replace(/\{\{HR Name\}\}/gi,        `<strong>${vars.hrName}</strong>`)
+    .replace(/\{\{hr_name\}\}/gi,        `<strong>${vars.hrName}</strong>`)
+    .replace(/\{\{name\}\}/gi,           `<strong>${vars.hrName}</strong>`)
+    // Company name — bold in output
+    .replace(/\{\{Company Name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
+    .replace(/\{\{company_name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
+    // LinkedIn — clickable link
+    .replace(/\{\{LinkedIn\}\}/gi,
+      vars.linkedinUrl
+        ? `<a href="${vars.linkedinUrl}" style="color:#2563eb">${vars.linkedinUrl}</a>`
+        : '')
+    // **text** — bold (markdown-style in templates)
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 }
 
 export function stopCron() {

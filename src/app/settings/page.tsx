@@ -98,7 +98,7 @@ function CodexStatus() {
 
 interface Settings {
   gmailUser: string; gmailAppPass: string; dailyLimit: number;
-  pixelBaseUrl: string; aiBaseUrl: string; aiModel: string;
+  pixelBaseUrl: string; linkedinUrl: string; aiBaseUrl: string; aiModel: string;
   systemPrompt: string; sendingPaused: boolean;
   sendWindowStart: string; sendWindowEnd: string;
 }
@@ -171,6 +171,13 @@ export default function SettingsPage() {
                 onChange={e => set('gmailAppPass', e.target.value)}
                 placeholder="xxxx-xxxx-xxxx-xxxx" />
             </div>
+          </div>
+          <div className="form-group" style={{ marginTop: 8 }}>
+            <label className="form-label">Your LinkedIn URL</label>
+            <input className="input" value={settings.linkedinUrl || ''}
+              onChange={e => set('linkedinUrl', e.target.value)}
+              placeholder="https://linkedin.com/in/your-profile" />
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Injected as {'{{'+'LinkedIn{}'+'}'} in every email template automatically</span>
           </div>
         </div>
 
