@@ -8,7 +8,46 @@ function getClient(settings?: { aiBaseUrl: string; aiModel: string } | null) {
   })
 }
 
-// ─── Classify email + auto-draft reply ────────────────────────────────────────
+// ─── Default system prompt for Aaditya ────────────────────────────────────────
+const DEFAULT_SYSTEM_PROMPT = `You are the AI assistant for Aaditya Aggarwal, a 3rd-year Computer Science student at SGGSCC (Sri Guru Gobind Singh College of Commerce), University of Delhi.
+
+ABOUT AADITYA:
+- Pursuing B.Com (Hons.) with CS specialisation, Delhi University
+- Skills: JavaScript, TypeScript, React, Next.js, Node.js, Python, SQL, system design
+- Built multiple production SaaS apps (CRMs, e-commerce tools, support systems)
+- Looking for tech/product/business internships at real companies (startups to MNCs)
+- Communication style: professional yet warm, confident, direct — never desperate or generic
+- Signs emails as: Aaditya Aggarwal
+
+WHAT HE WANTS:
+✅ Software engineering internships
+✅ Product management internships  
+✅ Business operations / strategy internships
+✅ Data/analytics internships
+✅ Any genuine hiring opportunity from a company HR or founder
+
+WHAT HE DOES NOT WANT:
+❌ IBM SkillsBuild, Google Career Certificates, Microsoft Learn (learning programs, not real internships)
+❌ Fellowship/stipend programs from NGOs or government schemes
+❌ Volunteer positions or unpaid "internships" with no real work
+❌ MLM, direct selling, insurance sales, or commission-only roles
+❌ Mass recruitment blasts with no personalisation
+
+EMAIL CLASSIFICATION RULES (use one of 3 categories):
+- INTERNSHIP: Genuine HR or founder reply to his application, interview invite, internship offer, shortlisting, or direct recruitment for a relevant role → goes to main Inbox, gets a professional reply
+- REPLY_NEEDED: Not internship-related but still needs a human response (e.g., college emails, personal contacts, vendor inquiries, OTPs that need acknowledgement, or anything unclear that might be important) → goes to Other tab, gets a short appropriate reply
+- NO_REPLY: Fully automated, requires zero human response — Google/Apple security alerts, 2FA OTPs, newsletters, marketing emails, social notification digests, automated billing receipts → goes to Other tab, AI explains why no reply is needed
+
+When writing replies:
+- Be warm but concise (under 120 words unless necessary)
+- Match the tone of the email received (formal HR → formal reply; casual startup → warmer tone)
+- Never use generic phrases like "I hope this finds you well" or "[Your Name]"
+- Always sign as Aaditya Aggarwal
+- If it's an interview invite: confirm availability enthusiastically, ask for next steps
+- If it's a rejection: respond graciously, thank them, express willingness for future roles
+- If it's a shortlist/callback: express strong interest and availability`
+
+// ─── Main classify + draft function ──────────────────────────────────────────
 export async function classifyAndDraftReply(
   incomingEmailId: number,
   body: string,
@@ -24,72 +63,85 @@ export async function classifyAndDraftReply(
     })
 
     const settings = await prisma.settings.findFirst({ where: { id: 1 } })
-    const model = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
-    const client = getClient(settings)
-
-    // System prompt: who Aaditya is (editable from Settings UI)
-    const defaultSystemPrompt = `You are helping Aaditya Aggarwal, a Computer Science student at SGGSCC, University of Delhi.
-
-He is looking for: software engineering internships, product management internships, operations/business internships at real companies.
-
-He is NOT interested in: academic programs (IBM SkillsBuild, Google Explorer, fellowship programs), volunteer positions, unpaid internships at unknown organisations, MLM/direct selling roles, generic HR newsletters, or mass-blast recruitment for roles completely unrelated to tech/business.
-
-When classifying emails:
-- INTERNSHIP = a genuine response to his application, an interview invite, an internship offer, or a real recruitment opportunity from a company HR
-- OTHER = newsletters, automated alerts, Google/Apple account security emails, IBM/Microsoft exploration programs, volunteer drives, spam`
+    const model    = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
+    const client   = getClient(settings)
 
     const systemPrompt = (settings?.systemPrompt && settings.systemPrompt.trim())
       ? settings.systemPrompt.trim()
-      : defaultSystemPrompt
+      : DEFAULT_SYSTEM_PROMPT
 
-    // ── Step 1: Classify ──────────────────────────────────────────────────────
+    // ── Step 1: 3-way classification ─────────────────────────────────────────
     const classifyRes = await client.chat.completions.create({
       model,
       messages: [
         { role: 'system', content: systemPrompt },
         {
           role: 'user',
-          content: `Email subject: "${subject}"
-Email from: ${fromName} <${fromEmail}>
-Email body:
+          content: `Classify this email Aaditya received. Reply with EXACTLY ONE of: INTERNSHIP | REPLY_NEEDED | NO_REPLY
+
+Definitions:
+- INTERNSHIP: Genuine HR/founder reply, interview invite, shortlist, offer, or direct recruitment for a role
+- REPLY_NEEDED: Needs a human response but NOT internship-related (personal, college, vendor, important info)
+- NO_REPLY: Fully automated — Google/Apple alerts, OTPs, newsletters, marketing, billing, social digests
+
+Email subject: "${subject}"
+From: ${fromName} <${fromEmail}>
+Body:
 """
 ${body.substring(0, 2000)}
 """
 
-Classify this email:
-- INTERNSHIP = genuine reply to his application, interview invite, offer, or real HR recruitment
-- OTHER = newsletters, security alerts, IBM/Google programs, fellowship/volunteer drives, spam
-
-Reply with ONLY: INTERNSHIP or OTHER`
+Reply with ONLY one word: INTERNSHIP or REPLY_NEEDED or NO_REPLY`
         }
       ],
-      max_tokens: 10,
+      max_tokens: 15,
     })
 
-    const category = classifyRes.choices[0]?.message?.content?.trim().toUpperCase()
-    const isInternship = category?.includes('INTERNSHIP')
+    const raw = classifyRes.choices[0]?.message?.content?.trim().toUpperCase() || ''
+    const category: 'INTERNSHIP' | 'REPLY_NEEDED' | 'NO_REPLY' =
+      raw.includes('INTERNSHIP')   ? 'INTERNSHIP'   :
+      raw.includes('REPLY_NEEDED') ? 'REPLY_NEEDED' : 'NO_REPLY'
 
-    if (!isInternship) {
-      // Mark as irrelevant (shows in "Other" tab in inbox)
+    console.log(`[AI] "${subject}" from ${fromEmail} → ${category}`)
+
+    // ── Step 2: Handle each category ─────────────────────────────────────────
+
+    if (category === 'NO_REPLY') {
+      // Get a short reason why no reply is needed
+      const reasonRes = await client.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: `This email does NOT need a reply. In one sentence (max 15 words), explain why:
+Subject: "${subject}"
+From: ${fromName} <${fromEmail}>
+Reply with ONLY the reason sentence, no extra text.`
+          }
+        ],
+        max_tokens: 40,
+      })
+      const reason = reasonRes.choices[0]?.message?.content?.trim() || 'Automated email — no reply needed.'
+
       await prisma.incomingEmail.update({
         where: { id: incomingEmailId },
-        data: { aiStatus: 'irrelevant' },
+        data: {
+          aiStatus:    'no_reply',
+          aiDraftReply: `🚫 No reply needed: ${reason}`,
+        },
       })
-      console.log(`[AI] Classified as OTHER: "${subject}" from ${fromEmail}`)
       return
     }
 
-    console.log(`[AI] Classified as INTERNSHIP: "${subject}" from ${fromEmail}`)
-
-    // ── Step 2: Match / create company ───────────────────────────────────────
+    // Both INTERNSHIP and REPLY_NEEDED need a draft
+    // ── Step 3: Resolve company (for INTERNSHIP only) ─────────────────────────
     let resolvedCompanyId = companyId
 
-    if (!resolvedCompanyId && fromEmail) {
-      // Try to extract company name from the email domain or sender name
+    if (category === 'INTERNSHIP' && !resolvedCompanyId && fromEmail) {
       const domain = fromEmail.split('@')[1] || ''
       const companyNameFromDomain = domain.split('.')[0] || fromName
 
-      // Check if company already exists by domain match
       const contacts = await prisma.contact.findMany({ select: { email: true, companyId: true } })
       for (const c of contacts) {
         if (c.email.toLowerCase().endsWith('@' + domain)) {
@@ -98,38 +150,27 @@ Reply with ONLY: INTERNSHIP or OTHER`
         }
       }
 
-      // Still no match → ask AI to extract company name and create it
       if (!resolvedCompanyId) {
         const nameRes = await client.chat.completions.create({
           model,
           messages: [{
             role: 'user',
-            content: `What is the company name from this email sender?
-Sender name: "${fromName}"
-Sender email: "${fromEmail}"
-Email subject: "${subject}"
-
-Reply with ONLY the company name (2-4 words max). If unknown, use the email domain name.`
+            content: `What is the company name from this sender?
+Name: "${fromName}", Email: "${fromEmail}", Subject: "${subject}"
+Reply with ONLY the company name (2-4 words). If unclear, use the email domain name.`
           }],
           max_tokens: 20,
         })
-
         const aiCompanyName = nameRes.choices[0]?.message?.content?.trim() ||
           companyNameFromDomain.charAt(0).toUpperCase() + companyNameFromDomain.slice(1)
 
-        // Create company
         try {
           const newCompany = await prisma.company.create({
-            data: {
-              name: aiCompanyName,
-              stage: 'replied',
-              repliedAt: new Date(),
-            },
+            data: { name: aiCompanyName, stage: 'replied', repliedAt: new Date() },
           })
           resolvedCompanyId = newCompany.id
-          console.log(`[AI] Created new company: "${aiCompanyName}" for ${fromEmail}`)
+          console.log(`[AI] Created company: "${aiCompanyName}"`)
         } catch {
-          // Company might already exist (unique constraint) — find it
           const found = await prisma.company.findFirst({
             where: { name: { contains: companyNameFromDomain } },
           })
@@ -138,8 +179,8 @@ Reply with ONLY the company name (2-4 words max). If unknown, use the email doma
       }
     }
 
-    // ── Step 3: Mark company as replied (stop follow-ups) ─────────────────────
-    if (resolvedCompanyId) {
+    // ── Step 4: Stop follow-ups if internship reply ───────────────────────────
+    if (category === 'INTERNSHIP' && resolvedCompanyId) {
       await prisma.company.update({
         where: { id: resolvedCompanyId },
         data: { repliedAt: new Date(), stage: 'replied' },
@@ -150,37 +191,49 @@ Reply with ONLY the company name (2-4 words max). If unknown, use the email doma
       })
     }
 
-    // ── Step 4: Get company name for draft ────────────────────────────────────
+    // ── Step 5: Get company name for context ──────────────────────────────────
     let companyName = fromName
     if (resolvedCompanyId) {
       const company = await prisma.company.findFirst({ where: { id: resolvedCompanyId } })
       if (company) companyName = company.name
     }
 
-    // ── Step 5: Draft reply ───────────────────────────────────────────────────
-    const draftRes = await client.chat.completions.create({
-      model,
-      messages: [{
-        role: 'user',
-        content: `You are Aaditya Aggarwal, a CS student applying for internships.
+    // ── Step 6: Draft reply ───────────────────────────────────────────────────
+    const draftPrompt = category === 'INTERNSHIP'
+      ? `You are Aaditya Aggarwal (CS student, SGGSCC Delhi). Write a reply to this email from ${fromName} at ${companyName}.
 
-You received this email from ${fromName} at ${companyName}:
 Subject: "${subject}"
 """
 ${body.substring(0, 2000)}
 """
 
-Write a professional, warm, concise reply:
+Rules:
+- Professional, warm, confident — never desperate
+- Under 120 words unless the email is complex
 - Be specific to what they said
-- Express genuine enthusiasm
-- Under 130 words
-- Do NOT use placeholder brackets like [Name]
-- Start with a proper greeting using their name if available
-- Sign off as "Aaditya Aggarwal"
-- Output ONLY the email body in HTML using <p> tags
-- No subject line, no headers`
-      }],
-      max_tokens: 450,
+- Sign as Aaditya Aggarwal
+- Output ONLY the HTML body using <p> tags (no subject line, no headers)`
+
+      : `You are Aaditya Aggarwal (CS student, SGGSCC Delhi). Write a brief, appropriate reply to this email from ${fromName}.
+
+Subject: "${subject}"
+"""
+${body.substring(0, 1500)}
+"""
+
+Rules:
+- Match the tone (formal or casual) of the email
+- Keep it short and appropriate
+- Sign as Aaditya Aggarwal
+- Output ONLY the HTML body using <p> tags`
+
+    const draftRes = await client.chat.completions.create({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: draftPrompt }
+      ],
+      max_tokens: 500,
     })
 
     const draft = draftRes.choices[0]?.message?.content?.trim() || ''
@@ -188,16 +241,14 @@ Write a professional, warm, concise reply:
     await prisma.incomingEmail.update({
       where: { id: incomingEmailId },
       data: {
-        aiStatus: 'draft_ready',
+        aiStatus:    category === 'INTERNSHIP' ? 'draft_ready' : 'reply_needed',
         aiDraftReply: draft,
-        companyId: resolvedCompanyId,
+        companyId:   resolvedCompanyId,
       },
     })
 
-    console.log(`[AI] Draft ready for email ${incomingEmailId} (company: ${companyName})`)
   } catch (err) {
     console.error('[AI] classifyAndDraftReply error:', err)
-    // Reset to "new" so it gets retried
     await prisma.incomingEmail.update({
       where: { id: incomingEmailId },
       data: { aiStatus: 'new' },
@@ -211,8 +262,12 @@ export async function regenerateDraft(incomingEmailId: number): Promise<string> 
   if (!email) throw new Error('Email not found')
 
   const settings = await prisma.settings.findFirst({ where: { id: 1 } })
-  const model = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
-  const client = getClient(settings)
+  const model    = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
+  const client   = getClient(settings)
+
+  const systemPrompt = (settings?.systemPrompt && settings.systemPrompt.trim())
+    ? settings.systemPrompt.trim()
+    : DEFAULT_SYSTEM_PROMPT
 
   let companyName = email.fromName || email.fromEmail
   if (email.companyId) {
@@ -222,19 +277,21 @@ export async function regenerateDraft(incomingEmailId: number): Promise<string> 
 
   const res = await client.chat.completions.create({
     model,
-    messages: [{
-      role: 'user',
-      content: `You are Aaditya Aggarwal, a CS student applying for internships.
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: `Write a fresh professional reply from Aaditya Aggarwal to ${email.fromName || email.fromEmail} at ${companyName}.
 
-You received this email from ${email.fromName || email.fromEmail} at ${companyName}:
 Subject: "${email.subject}"
 """
 ${email.body.substring(0, 2000)}
 """
 
-Write a fresh professional reply. Under 130 words. Output only HTML body using <p> tags. Sign as Aaditya Aggarwal.`
-    }],
-    max_tokens: 450,
+Under 130 words. Output only HTML body using <p> tags. Sign as Aaditya Aggarwal.`
+      }
+    ],
+    max_tokens: 500,
   })
 
   const draft = res.choices[0]?.message?.content?.trim() || ''

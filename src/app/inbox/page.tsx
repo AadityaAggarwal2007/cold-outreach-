@@ -18,13 +18,15 @@ interface IncomingEmail {
 }
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
-  new:         { label: 'Processing…', color: 'var(--yellow)' },
-  classifying: { label: 'AI Analysing…', color: 'var(--yellow)' },
-  classified:  { label: 'Classified', color: 'var(--text-muted)' },
-  draft_ready: { label: '✨ Draft Ready', color: 'var(--green)' },
-  replied:     { label: 'Replied ✓', color: 'var(--text-muted)' },
-  irrelevant:  { label: 'Other', color: 'var(--text-muted)' },
-  bounced:     { label: '⚠️ Bounced', color: 'var(--red)' },
+  new:           { label: 'Processing…',    color: 'var(--yellow)' },
+  classifying:   { label: 'AI Analysing…',  color: 'var(--yellow)' },
+  classified:    { label: 'Classified',      color: 'var(--text-muted)' },
+  draft_ready:   { label: '✨ Draft Ready',  color: 'var(--green)' },
+  reply_needed:  { label: '💬 Reply Needed', color: '#f59e0b' },
+  no_reply:      { label: '🚫 No Reply',     color: 'var(--text-muted)' },
+  replied:       { label: 'Replied ✓',       color: 'var(--text-muted)' },
+  irrelevant:    { label: 'Other',           color: 'var(--text-muted)' },
+  bounced:       { label: '⚠️ Bounced',      color: 'var(--red)' },
 }
 
 // Detect if string looks like HTML
@@ -116,10 +118,14 @@ export default function InboxPage() {
     setSending(false)
   }
 
-  // Categorise emails
-  const inbox   = emails.filter(e => !e.replied && e.aiStatus !== 'irrelevant' && e.aiStatus !== 'bounced')
+  // Categorise emails into tabs
+  // Inbox: internship emails (draft_ready) + pending/classifying
+  // Other: reply_needed (needs response) + no_reply (automated, no response) + old irrelevant
+  // Replied: user already sent reply
+  // Bounced: NDR bounce notifications
+  const inbox   = emails.filter(e => !e.replied && e.aiStatus !== 'reply_needed' && e.aiStatus !== 'no_reply' && e.aiStatus !== 'irrelevant' && e.aiStatus !== 'bounced')
   const replied = emails.filter(e => e.replied)
-  const other   = emails.filter(e => e.aiStatus === 'irrelevant')
+  const other   = emails.filter(e => e.aiStatus === 'reply_needed' || e.aiStatus === 'no_reply' || e.aiStatus === 'irrelevant')
   const bounced = emails.filter(e => e.aiStatus === 'bounced')
 
   const tabList = [
@@ -314,24 +320,42 @@ export default function InboxPage() {
               )}
 
               {/* AI Draft Reply */}
-              {!selected.replied && selected.aiStatus !== 'bounced' && selected.aiStatus !== 'irrelevant' && (
+              {!selected.replied && selected.aiStatus !== 'bounced' && (
                 <div className="card">
                   <div className="card-header">
-                    <span className="card-title">✨ AI Draft Reply</span>
-                    <div className="flex gap-2">
-                      <button className="btn btn-ghost btn-sm" onClick={regenerateDraft} disabled={regenerating}>
-                        {regenerating ? '⏳' : '🔄'} Regenerate
-                      </button>
-                    </div>
+                    <span className="card-title">
+                      {selected.aiStatus === 'no_reply' ? '🚫 No Reply Needed' : '✨ AI Draft Reply'}
+                    </span>
+                    {selected.aiStatus !== 'no_reply' && (
+                      <div className="flex gap-2">
+                        <button className="btn btn-ghost btn-sm" onClick={regenerateDraft} disabled={regenerating}>
+                          {regenerating ? '⏳' : '🔄'} Regenerate
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {selected.aiStatus === 'classifying' || selected.aiStatus === 'new' ? (
+
+                  {selected.aiStatus === 'no_reply' && (
+                    <div style={{
+                      padding: '14px 16px', background: 'rgba(100,116,139,0.08)', borderRadius: 8,
+                      border: '1px solid rgba(100,116,139,0.2)', fontSize: 13.5, color: 'var(--text-dim)', lineHeight: 1.6
+                    }}>
+                      {selected.aiDraftReply || '🚫 No reply needed: This is an automated email.'}
+                    </div>
+                  )}
+
+                  {(selected.aiStatus === 'classifying' || selected.aiStatus === 'new') && (
                     <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
                       ⏳ AI is analysing this email… will auto-update in ~30 seconds
                     </div>
-                  ) : (
+                  )}
+
+                  {(selected.aiStatus === 'draft_ready' || selected.aiStatus === 'reply_needed' || selected.aiStatus === 'irrelevant') && (
                     <>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-                        Edit the draft below. Sent as a reply from your Gmail.
+                        {selected.aiStatus === 'reply_needed'
+                          ? '💬 Not internship-related but may need a response. Edit and send if appropriate.'
+                          : 'Edit the draft below. Sent as a reply from your Gmail.'}
                       </div>
                       <textarea
                         className="textarea"
@@ -353,6 +377,9 @@ export default function InboxPage() {
                   )}
                 </div>
               )}
+
+
+
             </>
           )}
         </div>
