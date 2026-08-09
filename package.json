@@ -11,10 +11,12 @@
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "@types/mailparser": "^3.4.6",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.11.1",
     "imapflow": "^1.6.6",
     "jose": "^6.2.8",
+    "mailparser": "^3.9.15",
     "next": "16.3.0",
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.5",

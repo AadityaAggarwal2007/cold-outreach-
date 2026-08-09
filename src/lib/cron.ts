@@ -1,6 +1,6 @@
 import { prisma } from './db'
 import { sendEmail } from './mailer'
-import { syncInbox } from './imap'
+import { syncInbox, retryPendingClassifications } from './imap'
 import path from 'path'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -17,24 +17,32 @@ export function startCron() {
   cronStarted = true
   console.log('[Cron] Starting scheduler...')
 
-  // Send queue: 1 email every ~96 seconds = 900/day
-  // We check every 60s and send if the daily limit hasn't been hit
+  // Send queue: check every 60s, send if within time window
   sendTimer = setInterval(async () => {
     await processSendQueue()
   }, 60_000)
 
-  // Inbox sync every 5 minutes
+  // Inbox sync every 2 minutes (fast enough to catch replies quickly)
   inboxTimer = setInterval(async () => {
     await syncInbox()
-  }, 5 * 60_000)
+    await retryPendingClassifications() // catch up any emails Codex missed
+  }, 2 * 60_000)
 
-  // Also trigger inbox sync at startup after 10s delay
-  setTimeout(() => syncInbox().catch(console.error), 10_000)
+  // Retry any unclassified emails every 3 minutes
+  setInterval(async () => {
+    await retryPendingClassifications()
+  }, 3 * 60_000)
+
+  // Initial inbox sync + retry after 15s
+  setTimeout(async () => {
+    await syncInbox()
+    await retryPendingClassifications()
+  }, 15_000)
 
   // Midnight daily reset
   scheduleMidnightReset()
 
-  console.log('[Cron] Started: email queue (60s) + inbox sync (5min)')
+  console.log('[Cron] Started: email queue (60s) + inbox sync (2min) + AI retry (3min)')
 }
 
 function scheduleMidnightReset() {

@@ -1,4 +1,5 @@
 import { ImapFlow } from 'imapflow'
+import { simpleParser } from 'mailparser'
 import { prisma } from './db'
 import { classifyAndDraftReply } from './ai'
 
@@ -12,23 +13,18 @@ async function getImapClient() {
     port: 993,
     secure: true,
     auth: { user, pass },
-    logger: false, // suppress verbose logs
+    logger: false,
   })
 }
 
-// Sync inbox — fetch unseen emails since last check
+// ─── Main inbox sync ───────────────────────────────────────────────────────────
 export async function syncInbox() {
   let client: ImapFlow | null = null
   try {
     client = await getImapClient()
     await client.connect()
 
-    // Get list of all companies we've emailed
-    const companies = await prisma.company.findMany({
-      select: { id: true, name: true },
-    })
-
-    // Build email domain → company map for fast lookup
+    // Build lookup maps: email/domain → companyId
     const contacts = await prisma.contact.findMany({
       select: { email: true, companyId: true },
     })
@@ -42,46 +38,57 @@ export async function syncInbox() {
 
     await client.mailboxOpen('INBOX')
 
-    // Fetch messages from the last 30 days that are unseen or recent
+    // Fetch last 30 days
     const since = new Date()
     since.setDate(since.getDate() - 30)
 
-    const messages: Array<{
-      uid: number
-      envelope: {
-        messageId?: string
-        from?: Array<{ address?: string; name?: string }>
-        subject?: string
-        date?: Date
-      }
-      source: Buffer
-    }> = []
+    const rawMessages: Array<{ uid: number; source: Buffer; envelope: { messageId?: string } }> = []
 
     for await (const msg of client.fetch({ since }, { envelope: true, source: true, uid: true })) {
-      messages.push(msg as typeof messages[0])
+      rawMessages.push(msg as typeof rawMessages[0])
     }
 
     let newCount = 0
 
-    for (const msg of messages) {
+    for (const msg of rawMessages) {
       const messageId = msg.envelope.messageId || ''
       if (!messageId) continue
 
-      // Dedup by message ID
-      const existing = await prisma.incomingEmail.findFirst({
-        where: { messageId },
-      })
+      // Dedup
+      const existing = await prisma.incomingEmail.findFirst({ where: { messageId } })
       if (existing) continue
 
-      const fromAddr = msg.envelope.from?.[0]?.address?.toLowerCase() || ''
-      const fromName = msg.envelope.from?.[0]?.name || fromAddr
-      const subject = msg.envelope.subject || '(No Subject)'
+      // ── Parse the raw MIME properly ──────────────────────────────────────────
+      // mailparser handles: quoted-printable, base64, multipart, charsets, etc.
+      const parsed = await simpleParser(msg.source)
 
-      // Extract plain text body from raw source
-      const rawBody = msg.source.toString('utf-8')
-      const body = extractBody(rawBody)
+      const fromAddr = parsed.from?.value?.[0]?.address?.toLowerCase() || ''
+      const fromName = parsed.from?.value?.[0]?.name || fromAddr
+      const subject  = parsed.subject || '(No Subject)'
 
-      // Match to a company
+      // Prefer plain text, fall back to HTML-stripped text
+      let body = ''
+      if (parsed.text) {
+        body = parsed.text.trim()
+      } else if (parsed.html) {
+        body = parsed.html
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/\s+/g, ' ')
+          .trim()
+      }
+
+      if (!body) body = '(No body content)'
+      body = body.substring(0, 10000)
+
+      // ── Match to a company ──────────────────────────────────────────────────
       let companyId: number | null = null
       if (emailToCompanyId.has(fromAddr)) {
         companyId = emailToCompanyId.get(fromAddr)!
@@ -92,26 +99,27 @@ export async function syncInbox() {
         }
       }
 
-      // Save to DB first with "new" status
+      // Save with "new" status
       const incoming = await prisma.incomingEmail.create({
         data: {
           companyId,
           fromEmail: fromAddr,
           fromName,
           subject,
-          body: body.substring(0, 10000), // cap at 10k chars
+          body,
           messageId,
           aiStatus: 'new',
         },
       })
 
-      // Classify and draft asynchronously
-      classifyAndDraftReply(incoming.id, body, subject, fromName, companyId).catch(console.error)
+      // Classify + draft reply immediately (async, doesn't block sync)
+      classifyAndDraftReply(incoming.id, body, subject, fromName, companyId, fromAddr)
+        .catch(console.error)
 
       newCount++
     }
 
-    console.log(`[IMAP] Synced inbox: ${newCount} new emails`)
+    console.log(`[IMAP] Synced: ${newCount} new emails from ${rawMessages.length} fetched`)
     return newCount
   } catch (err) {
     console.error('[IMAP] Sync error:', err)
@@ -123,23 +131,26 @@ export async function syncInbox() {
   }
 }
 
-// Extract readable body from raw email
-function extractBody(raw: string): string {
-  // Try to get text/plain section
-  const plainMatch = raw.match(/Content-Type: text\/plain[\s\S]*?\r?\n\r?\n([\s\S]+?)(?=--|\r?\n\r?\nContent-Type:|$)/i)
-  if (plainMatch) return plainMatch[1].trim()
+// ─── Retry classification for stuck "new" emails ──────────────────────────────
+// Runs every cycle to pick up emails where Codex was offline during first sync
+export async function retryPendingClassifications() {
+  try {
+    const stuck = await prisma.incomingEmail.findMany({
+      where: { aiStatus: 'new' },
+      take: 5, // process 5 at a time to avoid overloading AI
+    })
 
-  // Fallback: strip HTML tags
-  const htmlMatch = raw.match(/Content-Type: text\/html[\s\S]*?\r?\n\r?\n([\s\S]+?)(?=--|$)/i)
-  if (htmlMatch) {
-    return htmlMatch[1]
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/\s+/g, ' ')
-      .trim()
+    for (const email of stuck) {
+      classifyAndDraftReply(
+        email.id, email.body, email.subject, email.fromName || email.fromEmail,
+        email.companyId, email.fromEmail
+      ).catch(console.error)
+    }
+
+    if (stuck.length > 0) {
+      console.log(`[IMAP] Retrying classification for ${stuck.length} pending emails`)
+    }
+  } catch (err) {
+    console.error('[IMAP] Retry classification error:', err)
   }
-
-  // Last resort: strip all angle brackets from raw
-  return raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().substring(0, 5000)
 }
