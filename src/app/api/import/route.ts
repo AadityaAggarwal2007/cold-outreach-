@@ -23,15 +23,27 @@ export async function POST(req: NextRequest) {
     // Group by company first
     const companyMap = new Map<string, Array<{ name: string; email: string; phone: string; tier: string; status: string }>>()
 
-    for (const row of rows) {
-      const companyName = (row['Company'] || '').trim()
-      const contactName = (row['Contact Name'] || '').trim()
-      const email = (row['Email'] || '').trim().toLowerCase()
-      const phone = (row['Phone Number'] || '').toString().trim()
-      const tier = (row['Priority Tier'] || '').trim()
-      const statusSeen = (row['Status(es) Seen'] || '').trim()
+    let lastCompanyName = ''
+    let lastTier = ''
+    let lastStatus = ''
 
-      if (!companyName || !email) continue
+    for (const row of rows) {
+      // Carry forward company name for blank continuation rows (Excel merged cells)
+      const rawCompany = (row['Company'] || '').trim()
+      if (rawCompany) {
+        lastCompanyName = rawCompany
+        lastTier        = (row['Priority Tier'] || '').trim()
+        lastStatus      = (row['Status(es) Seen'] || '').trim()
+      }
+      const companyName = lastCompanyName
+      if (!companyName) continue
+
+      const contactName = (row['Contact Name'] || '').trim()
+      const email       = (row['Email'] || '').toString().trim().toLowerCase()
+      const phone       = (row['Phone Number'] || '').toString().trim()
+
+      // Skip rows with no email or obviously invalid emails
+      if (!email || !email.includes('@') || email.startsWith('-')) continue
 
       if (!companyMap.has(companyName)) {
         companyMap.set(companyName, [])
@@ -40,8 +52,8 @@ export async function POST(req: NextRequest) {
         name: contactName || email.split('@')[0],
         email,
         phone,
-        tier,
-        status: statusSeen,
+        tier: lastTier,
+        status: lastStatus,
       })
     }
 

@@ -27,26 +27,42 @@ export async function classifyAndDraftReply(
     const model = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
     const client = getClient(settings)
 
+    // System prompt: who Aaditya is (editable from Settings UI)
+    const defaultSystemPrompt = `You are helping Aaditya Aggarwal, a Computer Science student at SGGSCC, University of Delhi.
+
+He is looking for: software engineering internships, product management internships, operations/business internships at real companies.
+
+He is NOT interested in: academic programs (IBM SkillsBuild, Google Explorer, fellowship programs), volunteer positions, unpaid internships at unknown organisations, MLM/direct selling roles, generic HR newsletters, or mass-blast recruitment for roles completely unrelated to tech/business.
+
+When classifying emails:
+- INTERNSHIP = a genuine response to his application, an interview invite, an internship offer, or a real recruitment opportunity from a company HR
+- OTHER = newsletters, automated alerts, Google/Apple account security emails, IBM/Microsoft exploration programs, volunteer drives, spam`
+
+    const systemPrompt = (settings?.systemPrompt && settings.systemPrompt.trim())
+      ? settings.systemPrompt.trim()
+      : defaultSystemPrompt
+
     // ── Step 1: Classify ──────────────────────────────────────────────────────
     const classifyRes = await client.chat.completions.create({
       model,
-      messages: [{
-        role: 'user',
-        content: `You are analyzing an email received by an internship applicant named Aaditya Aggarwal.
-
-Email subject: "${subject}"
+      messages: [
+        { role: 'system', content: systemPrompt },
+        {
+          role: 'user',
+          content: `Email subject: "${subject}"
 Email from: ${fromName} <${fromEmail}>
 Email body:
 """
 ${body.substring(0, 2000)}
 """
 
-Classify this email into ONE of these categories:
-- INTERNSHIP: Related to internship, job application, hiring, interview, resume, or career opportunity
-- OTHER: Newsletters, promotions, spam, account notifications, OTPs, or anything not career-related
+Classify this email:
+- INTERNSHIP = genuine reply to his application, interview invite, offer, or real HR recruitment
+- OTHER = newsletters, security alerts, IBM/Google programs, fellowship/volunteer drives, spam
 
-Reply with ONLY the category word: INTERNSHIP or OTHER`
-      }],
+Reply with ONLY: INTERNSHIP or OTHER`
+        }
+      ],
       max_tokens: 10,
     })
 

@@ -91,6 +91,7 @@ model Settings {
   pixelBaseUrl    String   @default("")      // e.g. https://cdnassets.store
   aiBaseUrl       String   @default("http://localhost:10531/v1")
   aiModel         String   @default("gpt-5.6-sol")
+  systemPrompt    String   @default("")             // Aaditya's persona for AI replies
   sendingPaused   Boolean  @default(false)
   followUpDays    String   @default("4,8,15,22,30") // calendar days after initial email
   sendWindowStart String   @default("10:30")         // HH:MM in IST — emails start sending
