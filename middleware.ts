@@ -4,13 +4,13 @@ import { verifySession } from './src/lib/auth'
 const COOKIE_NAME = 'ir_session'
 
 // Public routes that don't need auth
-const PUBLIC_PATHS = ['/login', '/api/auth', '/api/r']
+const PUBLIC_PATHS = ['/login', '/api/auth', '/api/r', '/r']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next()
   }
 

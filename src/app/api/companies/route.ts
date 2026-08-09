@@ -17,6 +17,9 @@ export async function GET(req: NextRequest) {
   if (search) where.name = { contains: search, mode: 'insensitive' }
   if (stage) where.stage = stage
   if (tier) where.tier = { contains: tier }
+  if (searchParams.get('opened') === 'true') {
+    where.contacts = { some: { emailLogs: { some: { openedAt: { not: null } } } } }
+  }
 
   const [companies, total] = await Promise.all([
     prisma.company.findMany({

@@ -46,8 +46,9 @@ export async function sendEmail(opts: SendOptions): Promise<boolean> {
     // Inject pixel as a clean resource URL (disguised as a web font/asset)
     // This avoids triggering spam filters that scan for "/track/" patterns
     const pixelHtml = opts.pixelBaseUrl
-      ? `<img src="${opts.pixelBaseUrl}/r/${opts.pixelId}" width="1" height="1" style="display:none;border:0;outline:0;text-decoration:none;" alt="" />`
+      ? `<img src="${opts.pixelBaseUrl}/api/r/${opts.pixelId}" width="1" height="1" style="display:none;border:0;outline:0;text-decoration:none;" alt="" />`
       : ''
+
 
     const finalHtml = opts.html + pixelHtml
 

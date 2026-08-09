@@ -37,17 +37,18 @@ export default function CompaniesPage() {
   const [selected, setSelected] = useState<Company | null>(null)
   const [activeTab, setActiveTab] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [openedOnly, setOpenedOnly] = useState(false)
   const [page, setPage] = useState(1)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const params = new URLSearchParams({ page: String(page), limit: '50', search, ...(stageFilter ? { stage: stageFilter } : {}) })
+    const params = new URLSearchParams({ page: String(page), limit: '50', search, ...(stageFilter ? { stage: stageFilter } : {}), ...(openedOnly ? { opened: 'true' } : {}) })
     const r = await fetch(`/api/companies?${params}`)
     const data = await r.json()
     setCompanies(data.companies || [])
     setTotal(data.total || 0)
     setLoading(false)
-  }, [search, stageFilter, page])
+  }, [search, stageFilter, page, openedOnly])
 
   useEffect(() => { load() }, [load])
 
@@ -72,7 +73,7 @@ export default function CompaniesPage() {
           <div className="page-title">Companies</div>
           <div className="page-subtitle">{total} companies across all tiers</div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2" style={{ flexWrap: 'wrap' }}>
           {STAGES.map(s => (
             <button key={s.key} onClick={() => setStageFilter(stageFilter === s.key ? '' : s.key)}
               className="btn btn-sm btn-ghost"
@@ -80,6 +81,11 @@ export default function CompaniesPage() {
               {s.label}
             </button>
           ))}
+          <button onClick={() => setOpenedOnly(o => !o)}
+            className="btn btn-sm btn-ghost"
+            style={{ color: '#10b981', borderColor: openedOnly ? '#10b981' : undefined, background: openedOnly ? 'rgba(16,185,129,0.1)' : undefined }}>
+            👁 Opened Only
+          </button>
         </div>
       </div>
 
@@ -127,6 +133,10 @@ export default function CompaniesPage() {
                     <div className="flex gap-3 mt-4 text-sm text-muted" style={{ marginTop: 6, fontSize: 12 }}>
                       <span>👥 {company._count.contacts} HRs</span>
                       <span>📧 {company.contacts.reduce((a, c) => a + c.emailLogs.length, 0)} sent</span>
+                      {(() => {
+                        const opens = company.contacts.reduce((a, c) => a + c.emailLogs.filter(l => l.openedAt).length, 0)
+                        return opens > 0 ? <span style={{ color: '#10b981', fontWeight: 600 }}>👁 {opens} opened</span> : null
+                      })()}
                       {company._count.incomingEmails > 0 && <span style={{ color: 'var(--green)' }}>💬 {company._count.incomingEmails} replies</span>}
                     </div>
                     {company.tier && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{company.tier}</div>}
