@@ -110,11 +110,19 @@ export default function SettingsPage() {
   const [toast, setToast]       = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
 
   // Test email state
-  const [testEmail,   setTestEmail]   = useState('')
-  const [testName,    setTestName]    = useState('Test Recipient')
-  const [testCompany, setTestCompany] = useState('Test Company')
-  const [testSending, setTestSending] = useState(false)
-  const [testResult,  setTestResult]  = useState<string | null>(null)
+  const [testEmail,    setTestEmail]    = useState('')
+  const [testName,     setTestName]     = useState('Test Recipient')
+  const [testCompany,  setTestCompany]  = useState('Test Company')
+  const [testTemplate, setTestTemplate] = useState('all')
+  const [testSending,  setTestSending]  = useState(false)
+  const [testResult,   setTestResult]   = useState<string | null>(null)
+
+  // Resume status state
+  const [resumeStatus, setResumeStatus] = useState<{ exists: boolean; sizeKb?: number; modifiedAt?: string } | null>(null)
+  const [deletingResume, setDeletingResume] = useState(false)
+
+  // Send Now state
+  const [sendingNow, setSendingNow] = useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -126,6 +134,7 @@ export default function SettingsPage() {
       setSettings(d)
       setLoading(false)
     })
+    fetch('/api/resume').then(r => r.json()).then(d => setResumeStatus(d)).catch(() => {})
   }, [])
 
   async function save() {
@@ -304,12 +313,74 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
           </div>
         </div>
 
-        {/* ─── Test Email ─────────────────────────────────────────────────── */}
+        {/* ─── Resume Status ──────────────────────────────────────────── */}
+        <div className="card mb-4">
+          <div className="card-header"><span className="card-title">📎 Resume on Server</span></div>
+          {resumeStatus === null ? (
+            <div style={{ color:'var(--text-muted)', fontSize: 13 }}>Checking...</div>
+          ) : resumeStatus.exists ? (
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap: 12 }}>
+              <div>
+                <div style={{ color:'#10b981', fontWeight: 700, fontSize: 14 }}>✅ resume.pdf is uploaded</div>
+                <div style={{ fontSize: 12, color:'var(--text-muted)', marginTop: 4 }}>
+                  {resumeStatus.sizeKb} KB &nbsp;&middot;&nbsp;
+                  {resumeStatus.modifiedAt ? `Uploaded ${new Date(resumeStatus.modifiedAt).toLocaleString()}` : ''}
+                </div>
+              </div>
+              <button
+                className="btn btn-sm"
+                style={{ background:'rgba(239,68,68,0.15)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.3)' }}
+                disabled={deletingResume}
+                onClick={async () => {
+                  if (!confirm('Delete resume.pdf from server? Emails will send without attachment until you re-upload.')) return
+                  setDeletingResume(true)
+                  await fetch('/api/resume', { method: 'DELETE' })
+                  setResumeStatus({ exists: false })
+                  setDeletingResume(false)
+                }}>
+                {deletingResume ? '⏳...' : '🗑 Delete Resume'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ color:'#ef4444', fontWeight: 600, fontSize: 13 }}>
+              ⚠️ resume.pdf not found on server! Go to Campaigns → Import → Upload Resume PDF.
+            </div>
+          )}
+        </div>
+
+        {/* ─── Manual Send Now ────────────────────────────────────────── */}
+        <div className="card mb-4" style={{ border:'1px solid rgba(59,130,246,0.3)', background:'rgba(59,130,246,0.04)' }}>
+          <div className="card-header"><span className="card-title">⚡ Send Now (Manual Trigger)</span></div>
+          <p style={{ fontSize: 13, color:'var(--text-muted)', marginBottom: 14 }}>
+            Manually trigger one send cycle right now — bypasses the time window. Useful if the cron didn’t fire automatically.
+            Respects daily limit and pause status.
+          </p>
+          <button
+            className="btn"
+            style={{ background:'rgba(59,130,246,0.2)', color:'#3b82f6', border:'1px solid rgba(59,130,246,0.4)', fontWeight: 700 }}
+            disabled={sendingNow}
+            onClick={async () => {
+              setSendingNow(true)
+              try {
+                const r = await fetch('/api/cron/send', {
+                  method: 'POST',
+                  headers: { 'x-cron-secret': 'internreach-cron-2024' },
+                })
+                const d = await r.json()
+                showToast(d.success ? '⚡ Send cycle triggered!' : '❌ ' + d.error, d.success ? 'success' : 'error')
+              } catch { showToast('❌ Network error', 'error') }
+              setSendingNow(false)
+            }}>
+            {sendingNow ? '⏳ Triggering...' : '⚡ Trigger Send Cycle Now'}
+          </button>
+        </div>
+
+        {/* ─── Test Email ────────────────────────────────────────────── */}
         <div className="card mb-4" style={{ border: '1px solid rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.04)' }}>
-          <div className="card-header"><span className="card-title">🧪 Send Test Emails</span></div>
+          <div className="card-header"><span className="card-title">🧪 Send Test Email</span></div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-            Sends all 6 templates (Initial + FU1–FU5) <strong>instantly</strong> to any email.
-            Bypasses the send window, daily limit, and database. Use to verify templates look correct.
+            Send any single template (or all 6) to yourself instantly. Bypasses time window, daily limit, and database.
+            No <code>[TEST]</code> prefix — email arrives exactly as an HR would see it.
           </p>
           <div className="grid-2">
             <div className="form-group">
@@ -317,6 +388,19 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
               <input className="input" type="email" value={testEmail}
                 onChange={e => setTestEmail(e.target.value)}
                 placeholder="aadityaaggarwal3526@gmail.com" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Which Email to Send</label>
+              <select className="input" value={testTemplate} onChange={e => setTestTemplate(e.target.value)}
+                style={{ cursor:'pointer' }}>
+                <option value="all">📨 All 6 (Initial + FU1–FU5)</option>
+                <option value="initial">📩 Initial Email</option>
+                <option value="followup_1">🔄 Follow-up 1</option>
+                <option value="followup_2">🔄 Follow-up 2</option>
+                <option value="followup_3">🔄 Follow-up 3</option>
+                <option value="followup_4">🔄 Follow-up 4</option>
+                <option value="followup_5">🔄 Follow-up 5</option>
+              </select>
             </div>
             <div className="form-group">
               <label className="form-label">Fake Recipient Name</label>
@@ -338,12 +422,12 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
             style={{ background: '#f59e0b', color: '#000', fontWeight: 700, marginTop: 4 }}
             onClick={async () => {
               setTestSending(true)
-              setTestResult('⏳ Sending all 6 emails...')
+              setTestResult('⏳ Sending...')
               try {
                 const r = await fetch('/api/test-email', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ toEmail: testEmail, toName: testName, companyName: testCompany }),
+                  body: JSON.stringify({ toEmail: testEmail, toName: testName, companyName: testCompany, templateType: testTemplate }),
                 })
                 const d = await r.json()
                 if (d.success) {
@@ -357,7 +441,7 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
               }
               setTestSending(false)
             }}>
-            {testSending ? '⏳ Sending...' : '🚀 Send All 6 Test Emails Now'}
+            {testSending ? '⏳ Sending...' : `🚀 Send ${testTemplate === 'all' ? 'All 6' : testTemplate.replace('_', ' ').toUpperCase()} Now`}
           </button>
 
           {testResult && (

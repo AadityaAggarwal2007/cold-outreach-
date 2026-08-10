@@ -91,8 +91,8 @@ function isWithinSendWindow(windowStart = '10:30', windowEnd = '11:59'): boolean
   return nowMins >= startH * 60 + startM && nowMins <= endH * 60 + endM
 }
 
-// ─── Main send loop ───────────────────────────────────────────────────────────
-async function processSendQueue() {
+// ─── Main send loop (exported so /api/cron/send can call it) ─────────────────
+export async function processSendQueue() {
   try {
     const settings = await prisma.settings.findFirst({ where: { id: 1 } })
     if (!settings) return
