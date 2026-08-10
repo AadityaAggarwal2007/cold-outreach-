@@ -38,6 +38,10 @@ export async function GET(req: NextRequest) {
 
   const settings = await prisma.settings.findFirst({ where: { id: 1 } })
 
+  // Exclude the internal test company from all stats
+  const NOT_TEST = { name: { not: '_InternReach Test_' } }
+  const NOT_TEST_CONTACT = { company: NOT_TEST }
+
   const [
     totalCompanies,
     totalContacts,
@@ -49,16 +53,16 @@ export async function GET(req: NextRequest) {
     repliedCompanies,
     pendingFollowUps,
   ] = await Promise.all([
-    prisma.company.count(),
-    prisma.contact.count(),
-    prisma.contact.count({ where: { status: 'pending' } }),
-    prisma.contact.count({ where: { status: 'sent' } }),
-    prisma.contact.count({ where: { status: 'stopped' } }),
-    prisma.contact.count({ where: { status: 'bounced' } }),
-    prisma.emailLog.count({ where: { openedAt: { not: null } } }),
-    prisma.company.count({ where: { repliedAt: { not: null } } }),
+    prisma.company.count({ where: NOT_TEST }),
+    prisma.contact.count({ where: NOT_TEST_CONTACT }),
+    prisma.contact.count({ where: { status: 'pending', ...NOT_TEST_CONTACT } }),
+    prisma.contact.count({ where: { status: 'sent',    ...NOT_TEST_CONTACT } }),
+    prisma.contact.count({ where: { status: 'stopped', ...NOT_TEST_CONTACT } }),
+    prisma.contact.count({ where: { status: 'bounced', ...NOT_TEST_CONTACT } }),
+    prisma.emailLog.count({ where: { openedAt: { not: null }, contact: NOT_TEST_CONTACT } }),
+    prisma.company.count({ where: { repliedAt: { not: null }, ...NOT_TEST } }),
     prisma.contact.count({
-      where: { status: 'sent', followUpCount: { lt: 6 }, company: { repliedAt: null } },
+      where: { status: 'sent', followUpCount: { lt: 6 }, company: { repliedAt: null, ...NOT_TEST } },
     }),
   ])
 

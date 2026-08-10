@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
   const stage = searchParams.get('stage') || ''
   const tier = searchParams.get('tier') || ''
 
-  const where: Record<string, unknown> = {}
+  const where: Record<string, unknown> = { name: { not: '_InternReach Test_' } }
   if (search) where.name = { contains: search, mode: 'insensitive' }
   if (stage) where.stage = stage
   if (tier) where.tier = { contains: tier }

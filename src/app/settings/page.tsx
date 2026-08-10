@@ -123,6 +123,9 @@ export default function SettingsPage() {
 
   // Send Now state
   const [sendingNow, setSendingNow] = useState(false)
+  // Test email pixel tracking
+  const [testPixelIds, setTestPixelIds] = useState<Record<string, string>>({})
+  const [testOpenStatus, setTestOpenStatus] = useState<Record<string, { openedAt: string | null; openCount: number }>>({})
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast({ msg, type })
@@ -136,6 +139,23 @@ export default function SettingsPage() {
     })
     fetch('/api/resume').then(r => r.json()).then(d => setResumeStatus(d)).catch(() => {})
   }, [])
+
+  // Auto-poll open status every 5s after a test email is sent
+  useEffect(() => {
+    const ids = Object.values(testPixelIds)
+    if (!ids.length) return
+    const allOpened = ids.every(id => testOpenStatus[id]?.openedAt)
+    if (allOpened) return  // stop polling once all opened
+
+    const poll = async () => {
+      const r = await fetch(`/api/test-email?pixelIds=${ids.join(',')}`)
+      const d = await r.json()
+      setTestOpenStatus(d.statuses || {})
+    }
+    poll()
+    const timer = setInterval(poll, 5000)
+    return () => clearInterval(timer)
+  }, [testPixelIds])
 
   async function save() {
     setSaving(true)
@@ -431,8 +451,8 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
                 })
                 const d = await r.json()
                 if (d.success) {
-                  setTestResult(`✅ ${d.message}\n\n` +
-                    d.results.map((x: {type:string;ok:boolean}) => `${x.ok ? '✅' : '❌'} ${x.type}`).join('\n'))
+                  setTestResult(`✅ ${d.message}`)
+                  if (d.pixelIds) setTestPixelIds(d.pixelIds)
                 } else {
                   setTestResult(`❌ Error: ${d.error}`)
                 }
@@ -445,13 +465,36 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
           </button>
 
           {testResult && (
-            <div style={{
-              marginTop: 14, padding: '12px 14px',
-              background: 'var(--bg-700)', borderRadius: 8,
-              fontSize: 13, fontFamily: 'monospace',
-              whiteSpace: 'pre-wrap', color: 'var(--text-dim)'
-            }}>
+            <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--bg-700)', borderRadius: 8, fontSize: 13, fontFamily: 'monospace', whiteSpace: 'pre-wrap', color: 'var(--text-dim)' }}>
               {testResult}
+            </div>
+          )}
+
+          {/* Live open tracker */}
+          {Object.keys(testPixelIds).length > 0 && (
+            <div style={{ marginTop: 16, padding: '14px 16px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: 'var(--text)' }}>📡 Live Tracker — auto-refreshes every 5s</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {Object.entries(testPixelIds).map(([type, pixelId]) => {
+                  const status = testOpenStatus[pixelId]
+                  const opened = !!status?.openedAt
+                  const ago = opened ? Math.round((Date.now() - new Date(status!.openedAt!).getTime()) / 60000) : null
+                  return (
+                    <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 13 }}>
+                      <span style={{ minWidth: 100, fontWeight: 600 }}>{type.replace('_', ' ').toUpperCase()}</span>
+                      <span style={{ background: 'rgba(59,130,246,0.15)', color: '#3b82f6', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>✅ SENT</span>
+                      {opened ? (
+                        <span style={{ background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
+                          👁 OPENED {status!.openCount}× · {ago === 0 ? 'just now' : `${ago}m ago`}
+                        </span>
+                      ) : (
+                        <span style={{ background: 'rgba(100,116,139,0.15)', color: 'var(--text-muted)', padding: '2px 8px', borderRadius: 6, fontSize: 11 }}>⏳ not opened yet</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>Note: Gmail blocks images by default — open tracking works on Outlook / corporate emails</div>
             </div>
           )}
         </div>
