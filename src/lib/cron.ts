@@ -92,6 +92,10 @@ function isWithinSendWindow(windowStart = '10:30', windowEnd = '11:59'): boolean
 }
 
 // ─── Main send loop (exported so /api/cron/send can call it) ─────────────────
+// Sends up to BATCH_PER_CALL emails per invocation.
+// Cron fires every 1 minute → 10 emails/min → 600/hr (daily limit caps it).
+const BATCH_PER_CALL = 10
+
 export async function processSendQueue() {
   try {
     const settings = await prisma.settings.findFirst({ where: { id: 1 } })
@@ -108,18 +112,21 @@ export async function processSendQueue() {
 
     if (settings.sentToday >= settings.dailyLimit) return
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // PRIORITY RULE (user-confirmed):
-    //   1. Pending initials (never emailed) → fill slots first
-    //   2. Due follow-ups → fill remaining slots
-    //
-    // This ensures ALL initials go out before follow-ups begin mixing in.
-    // Once all initials are done, follow-up slots fill naturally each day.
-    // ═══════════════════════════════════════════════════════════════════════════
-    const initialSent = await sendNextInitial(settings)
-    if (initialSent) return
+    // ─── Send up to BATCH_PER_CALL emails per cron tick ──────────────────────
+    for (let i = 0; i < BATCH_PER_CALL; i++) {
+      // Re-read settings each iteration so sentToday is fresh
+      const s = await prisma.settings.findFirst({ where: { id: 1 } })
+      if (!s || s.sendingPaused || s.sentToday >= s.dailyLimit) break
 
-    await sendNextFollowUp(settings)
+      const initialSent = await sendNextInitial(s)
+      if (!initialSent) {
+        const followUpSent = await sendNextFollowUp(s)
+        if (!followUpSent) break  // nothing left to send
+      }
+
+      // 1.2s gap between emails — avoids Gmail SMTP rate-limit
+      if (i < BATCH_PER_CALL - 1) await new Promise(r => setTimeout(r, 1200))
+    }
   } catch (err) {
     console.error('[Cron] processSendQueue error:', err)
   }
