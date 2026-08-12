@@ -1,15 +1,15 @@
 import nodemailer from 'nodemailer'
 import { prisma } from './db'
 
-let _transporter: nodemailer.Transporter | null = null
+const _transporters = new Map<number, nodemailer.Transporter>()
 
-async function getTransporter() {
-  if (_transporter) return _transporter
-  const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+async function getTransporter(userId: number) {
+  if (_transporters.has(userId)) return _transporters.get(userId)!
+  const settings = await prisma.settings.findUnique({ where: { userId } })
   const user = settings?.gmailUser || process.env.GMAIL_USER || ''
   const pass = settings?.gmailAppPass || process.env.GMAIL_APP_PASSWORD || ''
 
-  _transporter = nodemailer.createTransport({
+  const t = nodemailer.createTransport({
     host: 'smtp.gmail.com',
     port: 465,
     secure: true,
@@ -17,14 +17,18 @@ async function getTransporter() {
     pool: true,
     maxConnections: 3,
     rateDelta: 1000,
-    rateLimit: 1, // 1 message per second max
+    rateLimit: 1,
   })
-  return _transporter
+  _transporters.set(userId, t)
+  return t
 }
 
-// Reset transporter cache when settings change
-export function resetTransporter() {
-  _transporter = null
+export function resetTransporter(userId?: number) {
+  if (userId !== undefined) {
+    _transporters.delete(userId)
+  } else {
+    _transporters.clear()
+  }
 }
 
 export interface SendOptions {
@@ -37,7 +41,6 @@ export interface SendOptions {
   resumePath?: string
 }
 
-// Strip HTML tags to generate a plain-text fallback (required for good deliverability)
 function htmlToPlainText(html: string): string {
   return html
     .replace(/<br\s*\/?>/gi, '\n')
@@ -54,11 +57,8 @@ function htmlToPlainText(html: string): string {
     .trim()
 }
 
-// Wrap raw template body in a clean, deliverable HTML structure
 function wrapInEmailHtml(body: string): string {
-  // If already has <html> tag, return as-is
   if (body.toLowerCase().includes('<html')) return body
-  // Convert newlines to <br> for raw text templates
   const htmlBody = body
     .replace(/\n\n/g, '</p><p style="margin:0 0 16px 0;">')
     .replace(/\n/g, '<br/>')
@@ -76,44 +76,34 @@ function wrapInEmailHtml(body: string): string {
 </html>`
 }
 
-export async function sendEmail(opts: SendOptions): Promise<boolean> {
+export async function sendEmail(opts: SendOptions, userId: number): Promise<boolean> {
   try {
-    const transporter = await getTransporter()
-    const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+    const transporter = await getTransporter(userId)
+    const settings = await prisma.settings.findUnique({ where: { userId } })
     const fromUser = settings?.gmailUser || process.env.GMAIL_USER || ''
 
-    // Pixel: use opacity:0 + tiny size instead of display:none
-    // display:none is a known phishing/spam red flag — never use it
     const pixelHtml = opts.pixelBaseUrl
       ? `<img src="${opts.pixelBaseUrl}/api/r/${opts.pixelId}" width="1" height="1" style="opacity:0;border:0;outline:0;" alt="" />`
       : ''
 
     const wrappedHtml = wrapInEmailHtml(opts.html)
     const finalHtml   = wrappedHtml.replace('</body>', `${pixelHtml}</body>`)
-
-    // Plain-text version is REQUIRED for good deliverability
-    // Spam filters heavily penalise HTML-only emails
-    const plainText = htmlToPlainText(opts.html)
+    const plainText   = htmlToPlainText(opts.html)
 
     const mailOptions: nodemailer.SendMailOptions = {
       from: `"Aaditya Aggarwal" <${fromUser}>`,
       to: `"${opts.toName}" <${opts.to}>`,
       subject: opts.subject,
-      text: plainText,    // Plain-text alternative — critical for inbox delivery
+      text: plainText,
       html: finalHtml,
       headers: {
-        // Prevents auto-replies from triggering our inbox sync
         'X-Auto-Response-Suppress': 'OOF, AutoReply',
-        // NO Precedence: bulk — that guarantees spam folder
       },
     }
 
     if (opts.resumePath) {
       mailOptions.attachments = [
-        {
-          filename: 'Resume - Aaditya Aggarwal.pdf',
-          path: opts.resumePath,
-        },
+        { filename: 'Resume - Aaditya Aggarwal.pdf', path: opts.resumePath },
       ]
     }
 
@@ -131,10 +121,10 @@ export async function sendReply(opts: {
   subject: string
   html: string
   inReplyTo?: string
-}): Promise<boolean> {
+}, userId: number): Promise<boolean> {
   try {
-    const transporter = await getTransporter()
-    const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+    const transporter = await getTransporter(userId)
+    const settings = await prisma.settings.findUnique({ where: { userId } })
     const fromUser = settings?.gmailUser || process.env.GMAIL_USER || ''
 
     await transporter.sendMail({

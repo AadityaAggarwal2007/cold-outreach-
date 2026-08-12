@@ -8,9 +8,23 @@ datasource db {
   provider = "sqlite"
 }
 
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String   @map("password_hash")
+  displayName  String   @default("") @map("display_name")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  companies     Company[]
+  templates     Template[]
+  settings      Settings?
+  dailySendLogs DailySendLog[]
+}
+
 model Company {
   id         Int       @id @default(autoincrement())
-  name       String    @unique
+  userId     Int       @default(1) @map("user_id")
+  name       String
   tier       String?   // "High - Converted/Hired", "Medium", "Low" etc.
   statusSeen String?   // Raw status from Excel
   repliedAt  DateTime?
@@ -18,8 +32,11 @@ model Company {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
+  user           User            @relation(fields: [userId], references: [id])
   contacts       Contact[]
   incomingEmails IncomingEmail[]
+
+  @@unique([userId, name])
 }
 
 model Contact {
@@ -73,36 +90,49 @@ model IncomingEmail {
 
 model Template {
   id        Int      @id @default(autoincrement())
+  userId    Int      @default(1) @map("user_id")
   name      String
-  type      String   @unique // "initial" | "followup_1" | "followup_2" | "followup_3" | "followup_4" | "followup_5"
+  type      String   // "initial" | "followup_1" | "followup_2" | "followup_3" | "followup_4" | "followup_5"
   subject   String
   htmlBody  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, type])
 }
 
 model Settings {
-  id              Int      @id @default(1)
+  id              Int      @id @default(autoincrement())
+  userId          Int      @unique @map("user_id")
   gmailUser       String   @default("")
-  gmailAppPass    String   @default("")      // stored plaintext in SQLite (secured by server)
+  gmailAppPass    String   @default("")
   dailyLimit      Int      @default(499)
   sentToday       Int      @default(0)
-  lastResetDate   String   @default("")      // YYYY-MM-DD
-  pixelBaseUrl    String   @default("")      // e.g. https://cdnassets.store
-  linkedinUrl     String   @default("")      // injected into email templates as {{LinkedIn}}
+  lastResetDate   String   @default("")
+  pixelBaseUrl    String   @default("")
+  linkedinUrl     String   @default("")
   aiBaseUrl       String   @default("http://localhost:10531/v1")
   aiModel         String   @default("gpt-5.6-sol")
-  systemPrompt    String   @default("")             // Aaditya's persona for AI replies
+  systemPrompt    String   @default("")
   sendingPaused   Boolean  @default(false)
-  followUpDays    String   @default("4,8,15,22,30") // calendar days after initial email
-  sendWindowStart String   @default("10:30")         // HH:MM in IST — emails start sending
-  sendWindowEnd   String   @default("11:59")         // HH:MM in IST — emails stop sending
+  followUpDays    String   @default("4,8,15,22,30")
+  sendWindowStart String   @default("10:30")
+  sendWindowEnd   String   @default("11:59")
+  followUpLimit   Int      @default(300)
+  fuSentToday     Int      @default(0)
   updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 model DailySendLog {
-  id      Int      @id @default(autoincrement())
-  date    String                              // YYYY-MM-DD
-  count   Int      @default(0)
+  id        Int      @id @default(autoincrement())
+  userId    Int      @default(1) @map("user_id")
+  date      String   // YYYY-MM-DD
+  count     Int      @default(0)
   createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
 }

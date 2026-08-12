@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth'
+import { getUserId } from '@/lib/auth'
 import { syncInbox } from '@/lib/imap'
 
 export async function POST(req: NextRequest) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
-  const count = await syncInbox()
+  const count = await syncInbox(userId)
   return NextResponse.json({ success: true, newEmails: count })
 }

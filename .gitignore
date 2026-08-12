@@ -47,4 +47,5 @@ next-env.d.ts
 *.db-shm
 
 # Resume — upload separately to VPS
-public/resume.pdf
+public/resume*.pdf
+.claude/

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendReply } from '@/lib/mailer'
 
 export async function POST(req: NextRequest) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
   const { emailId, replyHtml } = await req.json()
   if (!emailId || !replyHtml) {
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     subject: incoming.subject,
     html: replyHtml,
     inReplyTo: incoming.messageId || undefined,
-  })
+  }, userId)
 
   if (!success) {
     return NextResponse.json({ error: 'Failed to send reply' }, { status: 500 })

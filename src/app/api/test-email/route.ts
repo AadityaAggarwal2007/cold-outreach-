@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { sendEmail } from '@/lib/mailer'
 import { v4 as uuidv4 } from 'uuid'
 import path from 'path'
 
-// ─── Inline personalisation ────────────────────────────────────────────────────
 function personalize(template: string, vars: { companyName: string; hrName: string; linkedinUrl: string }) {
   return template
     .replace(/\{\{Recipient Name\}\}/gi, `<strong>${vars.hrName}</strong>`)
@@ -19,14 +19,12 @@ function personalize(template: string, vars: { companyName: string; hrName: stri
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 }
 
-// Upsert a special "_Test_" company + contact so tracker works for test emails
-async function ensureTestContact(toEmail: string, toName: string, companyName: string) {
+async function ensureTestContact(userId: number, toEmail: string, toName: string) {
   const company = await prisma.company.upsert({
-    where:  { name: '_InternReach Test_' },
+    where:  { userId_name: { userId, name: '_InternReach Test_' } },
     update: {},
-    create: { name: '_InternReach Test_', stage: 'test' },
+    create: { userId, name: '_InternReach Test_', stage: 'test' },
   })
-  // Upsert contact — if same email used again, reuse it
   const contact = await prisma.contact.upsert({
     where:  { email: toEmail },
     update: { name: toName, companyId: company.id },
@@ -36,6 +34,10 @@ async function ensureTestContact(toEmail: string, toName: string, companyName: s
 }
 
 export async function POST(req: NextRequest) {
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
+
   try {
     const { toEmail, toName, companyName, templateType } = await req.json()
 
@@ -43,7 +45,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'toEmail and companyName required' }, { status: 400 })
     }
 
-    const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+    const settings = await prisma.settings.findUnique({ where: { userId } })
     if (!settings?.gmailUser || !settings?.gmailAppPass) {
       return NextResponse.json({ error: 'Gmail not configured in Settings' }, { status: 400 })
     }
@@ -52,15 +54,14 @@ export async function POST(req: NextRequest) {
     const typesToSend = (templateType && templateType !== 'all') ? [templateType] : allTypes
 
     const templates = await prisma.template.findMany({
-      where: { type: { in: typesToSend } },
+      where: { type: { in: typesToSend }, userId },
     })
 
     if (templates.length === 0) {
       return NextResponse.json({ error: 'No templates found. Run seed-templates.cjs on VPS first.' }, { status: 400 })
     }
 
-    // Ensure test contact exists so tracker can write open data
-    const testContact = await ensureTestContact(toEmail, toName || 'Test', companyName)
+    const testContact = await ensureTestContact(userId, toEmail, toName || 'Test')
 
     const vars = {
       hrName:      toName      || 'Test Recipient',
@@ -80,7 +81,7 @@ export async function POST(req: NextRequest) {
       const html     = personalize(tpl.htmlBody, vars)
       const subject  = personalize(tpl.subject, vars)
       const pixelId  = uuidv4()
-      const resumePath = path.join(process.cwd(), 'public', 'resume.pdf')
+      const resumePath = path.join(process.cwd(), 'public', `resume-${userId}.pdf`)
 
       const ok = await sendEmail({
         to: toEmail,
@@ -90,10 +91,9 @@ export async function POST(req: NextRequest) {
         pixelId,
         pixelBaseUrl: settings.pixelBaseUrl || '',
         resumePath,
-      })
+      }, userId)
 
       if (ok) {
-        // Create EmailLog so tracker pixel can record opens
         await prisma.emailLog.create({
           data: {
             contactId: testContact.id,
@@ -128,7 +128,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET — check open status for a set of pixelIds (polled by Settings UI)
 export async function GET(req: NextRequest) {
   const url = new URL(req.url)
   const ids  = url.searchParams.get('pixelIds')?.split(',').filter(Boolean) || []

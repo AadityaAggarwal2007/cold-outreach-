@@ -298,4 +298,100 @@ tr:hover td { background: var(--bg-800); color: var(--text); }
 .text-sm { font-size: 12.5px; }
 .font-mono { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 12px; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* ─── MOBILE NAV (hidden on desktop) ─── */
+.mobile-nav {
+  display: none;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+  background: var(--bg-900); border-top: 1px solid var(--border);
+  padding: 0; height: 60px;
+}
+.mobile-nav-inner {
+  display: flex; height: 100%; align-items: stretch;
+}
+.mobile-nav-link {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; color: var(--text-muted); font-size: 10px; font-weight: 500;
+  text-decoration: none; border: none; background: none; cursor: pointer;
+  transition: color 0.15s; position: relative; padding: 8px 0;
+}
+.mobile-nav-link:hover, .mobile-nav-link.active { color: #ffffff; }
+.mobile-nav-link .mobile-nav-icon { font-size: 18px; line-height: 1; }
+.mobile-nav-link .mobile-badge {
+  position: absolute; top: 6px; right: calc(50% - 16px);
+  background: var(--red); color: white; font-size: 9px; font-weight: 700;
+  padding: 1px 4px; border-radius: 8px; min-width: 14px; text-align: center;
+}
+
+/* ─── MOBILE HEADER ─── */
+.mobile-header {
+  display: none;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  height: 52px; background: var(--bg-900); border-bottom: 1px solid var(--border);
+  align-items: center; padding: 0 16px;
+  font-size: 16px; font-weight: 800; gap: 8px;
+}
+
+/* ─── RESPONSIVE ─── */
+@media (max-width: 768px) {
+  /* Show mobile chrome, hide desktop sidebar */
+  .sidebar { display: none; }
+  .mobile-nav { display: flex; }
+  .mobile-header { display: flex; }
+
+  /* Main layout adjusts for fixed top + bottom bars */
+  .app-shell { flex-direction: column; }
+  .main-content {
+    padding-top: 52px;   /* height of mobile-header */
+    padding-bottom: 60px; /* height of mobile-nav */
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  /* Page header */
+  .page-header {
+    padding: 14px 16px 12px;
+    position: static; /* stop it being sticky inside nested scroll */
+    flex-wrap: wrap; gap: 10px;
+  }
+  .page-title { font-size: 17px; }
+  .page-subtitle { font-size: 12px; }
+  .page-body { padding: 16px; }
+
+  /* Stats grid — 2 columns on mobile */
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-card .stat-value { font-size: 24px; }
+
+  /* Cards */
+  .card { padding: 14px; }
+
+  /* 2-col grid becomes 1-col */
+  .grid-2 { grid-template-columns: 1fr; }
+
+  /* Tables scroll horizontally */
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  /* Split pane stacks */
+  .split-pane { grid-template-columns: 1fr; height: auto; }
+  .split-left { border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+
+  /* Tabs scroll */
+  .tabs { padding: 0 16px; }
+
+  /* Toast above bottom nav */
+  .toast { bottom: 72px; right: 12px; left: 12px; right: 12px; }
+
+  /* Modal full-screen-ish */
+  .modal { width: 95%; padding: 20px; max-height: 90vh; }
+
+  /* Buttons smaller */
+  .btn { padding: 8px 14px; font-size: 13px; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+
+  /* Inbox cards */
+  .inbox-card { padding: 14px; }
+
+  /* Kanban pills wrap naturally */
+  .kanban-stages { gap: 6px; }
+}
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }

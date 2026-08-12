@@ -1,20 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { verifySession } from './src/lib/auth'
+import { verifySession, COOKIE_NAME } from './src/lib/auth'
 
-const COOKIE_NAME = 'ir_session'
-
-// Public routes that don't need auth
 const PUBLIC_PATHS = ['/login', '/api/auth', '/api/r', '/r', '/api/cron']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  // Allow public paths
   if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
     return NextResponse.next()
   }
 
-  // Allow static assets
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
@@ -24,16 +19,16 @@ export async function middleware(req: NextRequest) {
   }
 
   const token = req.cookies.get(COOKIE_NAME)?.value
-  if (!token) {
-    return NextResponse.redirect(new URL('/login', req.url))
-  }
+  if (!token) return NextResponse.redirect(new URL('/login', req.url))
 
-  const valid = await verifySession(token)
-  if (!valid) {
-    return NextResponse.redirect(new URL('/login', req.url))
-  }
+  const session = await verifySession(token)
+  if (!session) return NextResponse.redirect(new URL('/login', req.url))
 
-  return NextResponse.next()
+  // Inject userId into request headers so API routes don't re-verify JWT
+  const response = NextResponse.next()
+  response.headers.set('x-user-id', String(session.userId))
+  response.headers.set('x-username', session.username)
+  return response
 }
 
 export const config = {

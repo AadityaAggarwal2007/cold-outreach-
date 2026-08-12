@@ -369,7 +369,7 @@ export default function CampaignsPage() {
 
         {/* ─── IMPORT TAB ──────────────────────────────────────────────────── */}
         {tab === 'import' && (
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 20, maxWidth: 900 }}>
+          <div className="grid-2" style={{ maxWidth: 900 }}>
             {/* CSV Import */}
             <div className="card">
               <div className="card-header"><span className="card-title">📥 Import Contacts</span></div>

@@ -9,9 +9,6 @@ let isSending    = false
 let sendTimer:  ReturnType<typeof setInterval> | null = null
 let inboxTimer: ReturnType<typeof setInterval> | null = null
 
-// Total follow-up rounds (after initial = round 0)
-// Round order: initial → FU1 → FU2 → FU3 → FU4 → FU5 → done
-// Each round only starts after the PREVIOUS round is 100% complete
 const TOTAL_FOLLOWUP_ROUNDS = 5
 
 export function startCron() {
@@ -19,10 +16,8 @@ export function startCron() {
   cronStarted = true
   console.log('[Cron] Starting scheduler...')
 
-  // ── Send queue: check every 10 seconds ──────────────────────────────────────
-  // 89-min window (10:30–11:59) = 534 × 10s intervals → enough for 499 emails
   sendTimer = setInterval(async () => {
-    if (isSending) return  // skip if previous send is still in progress
+    if (isSending) return
     isSending = true
     try {
       await processSendQueue()
@@ -31,26 +26,28 @@ export function startCron() {
     }
   }, 10_000)
 
-  // ── Inbox sync every 2 minutes ───────────────────────────────────────────────
   inboxTimer = setInterval(async () => {
-    await syncInbox()
+    await syncAllUsers()
     await retryPendingClassifications()
   }, 2 * 60_000)
 
-  // Retry unclassified emails every 3 minutes (in case Codex was briefly down)
   setInterval(async () => {
     await retryPendingClassifications()
   }, 3 * 60_000)
 
-  // Initial sync after 15s startup delay
   setTimeout(async () => {
-    await syncInbox()
+    await syncAllUsers()
     await retryPendingClassifications()
   }, 15_000)
 
   scheduleMidnightReset()
 
   console.log('[Cron] Started: email queue (10s) + inbox sync (2min) + AI retry (3min)')
+}
+
+async function syncAllUsers() {
+  const users = await prisma.user.findMany({ select: { id: true } })
+  await Promise.all(users.map(u => syncInbox(u.id).catch(console.error)))
 }
 
 function scheduleMidnightReset() {
@@ -60,30 +57,35 @@ function scheduleMidnightReset() {
   midnight.setHours(0, 0, 0, 0)
 
   setTimeout(async () => {
-    await resetDailyCount()
+    await resetAllDailyCounts()
     scheduleMidnightReset()
   }, midnight.getTime() - now.getTime())
 }
 
-async function resetDailyCount() {
+async function resetAllDailyCounts() {
   const today = new Date().toISOString().split('T')[0]
-  await prisma.settings.update({
-    where: { id: 1 },
+  await prisma.settings.updateMany({
     data: { sentToday: 0, lastResetDate: today },
   })
   console.log('[Cron] Daily send counter reset for', today)
 }
 
-// ─── IST send window guard ────────────────────────────────────────────────────
-// Returns true only on Mon–Fri between windowStart and windowEnd (IST)
+async function resetDailyCount(userId: number) {
+  const today = new Date().toISOString().split('T')[0]
+  await prisma.settings.update({
+    where: { userId },
+    data: { sentToday: 0, lastResetDate: today },
+  })
+}
+
 function isWithinSendWindow(windowStart = '10:30', windowEnd = '11:59'): boolean {
   const nowUTC  = new Date()
   const nowIST  = new Date(nowUTC.getTime() + 5.5 * 60 * 60 * 1000)
 
-  const dayIST  = nowIST.getUTCDay()       // 0=Sun … 6=Sat
+  const dayIST  = nowIST.getUTCDay()
   const nowMins = nowIST.getUTCHours() * 60 + nowIST.getUTCMinutes()
 
-  if (dayIST === 0 || dayIST === 6) return false   // weekend
+  if (dayIST === 0 || dayIST === 6) return false
 
   const [startH, startM] = windowStart.split(':').map(Number)
   const [endH,   endM  ] = windowEnd.split(':').map(Number)
@@ -91,49 +93,59 @@ function isWithinSendWindow(windowStart = '10:30', windowEnd = '11:59'): boolean
   return nowMins >= startH * 60 + startM && nowMins <= endH * 60 + endM
 }
 
-// ─── Main send loop (exported so /api/cron/send can call it) ─────────────────
-// Sends up to BATCH_PER_CALL emails per invocation.
-// Cron fires every 1 minute → 10 emails/min → 600/hr (daily limit caps it).
 const BATCH_PER_CALL = 10
 
 export async function processSendQueue() {
   try {
-    const settings = await prisma.settings.findFirst({ where: { id: 1 } })
-    if (!settings) return
-    if (settings.sendingPaused) return
-    if (!isWithinSendWindow(settings.sendWindowStart, settings.sendWindowEnd)) return
+    // Process each user's send queue independently
+    const allSettings = await prisma.settings.findMany({
+      where: { gmailUser: { not: '' }, gmailAppPass: { not: '' } },
+    })
 
-    // Reset counter on new day
-    const today = new Date().toISOString().split('T')[0]
-    if (settings.lastResetDate !== today) {
-      await resetDailyCount()
-      return
-    }
-
-    if (settings.sentToday >= settings.dailyLimit) return
-
-    // ─── Send up to BATCH_PER_CALL emails per cron tick ──────────────────────
-    for (let i = 0; i < BATCH_PER_CALL; i++) {
-      // Re-read settings each iteration so sentToday is fresh
-      const s = await prisma.settings.findFirst({ where: { id: 1 } })
-      if (!s || s.sendingPaused || s.sentToday >= s.dailyLimit) break
-
-      const initialSent = await sendNextInitial(s)
-      if (!initialSent) {
-        const followUpSent = await sendNextFollowUp(s)
-        if (!followUpSent) break  // nothing left to send
-      }
-
-      // 1.2s gap between emails — avoids Gmail SMTP rate-limit
-      if (i < BATCH_PER_CALL - 1) await new Promise(r => setTimeout(r, 1200))
+    for (const settings of allSettings) {
+      await processUserSendQueue(settings.userId, settings).catch(err =>
+        console.error(`[Cron] Error processing user ${settings.userId}:`, err)
+      )
     }
   } catch (err) {
     console.error('[Cron] processSendQueue error:', err)
   }
 }
 
-// ─── Send one initial email ───────────────────────────────────────────────────
-async function sendNextInitial(settings: {
+async function processUserSendQueue(userId: number, settings: {
+  sendingPaused: boolean
+  sendWindowStart: string
+  sendWindowEnd: string
+  lastResetDate: string | null
+  sentToday: number
+  dailyLimit: number
+}) {
+  if (settings.sendingPaused) return
+  if (!isWithinSendWindow(settings.sendWindowStart, settings.sendWindowEnd)) return
+
+  const today = new Date().toISOString().split('T')[0]
+  if (settings.lastResetDate !== today) {
+    await resetDailyCount(userId)
+    return
+  }
+
+  if (settings.sentToday >= settings.dailyLimit) return
+
+  for (let i = 0; i < BATCH_PER_CALL; i++) {
+    const s = await prisma.settings.findUnique({ where: { userId } })
+    if (!s || s.sendingPaused || s.sentToday >= s.dailyLimit) break
+
+    const initialSent = await sendNextInitial(userId, s)
+    if (!initialSent) {
+      const followUpSent = await sendNextFollowUp(userId, s)
+      if (!followUpSent) break
+    }
+
+    if (i < BATCH_PER_CALL - 1) await new Promise(r => setTimeout(r, 1200))
+  }
+}
+
+async function sendNextInitial(userId: number, settings: {
   gmailUser: string
   pixelBaseUrl: string
   linkedinUrl: string
@@ -144,17 +156,17 @@ async function sendNextInitial(settings: {
     where: {
       status: 'pending',
       followUpCount: 0,
-      company: { repliedAt: null },
+      company: { repliedAt: null, userId },
     },
     include: { company: true },
-    orderBy: { createdAt: 'asc' },  // top of import list first
+    orderBy: { createdAt: 'asc' },
   })
 
   if (!contact) return false
 
-  const template = await prisma.template.findFirst({ where: { type: 'initial' } })
+  const template = await prisma.template.findFirst({ where: { type: 'initial', userId } })
   if (!template) {
-    console.warn('[Cron] No initial template — skipping')
+    console.warn(`[Cron] User ${userId}: No initial template — skipping`)
     return false
   }
 
@@ -162,13 +174,13 @@ async function sendNextInitial(settings: {
   const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
   const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
 
-  const resumePath = path.join(process.cwd(), 'public', 'resume.pdf')
+  const resumeFile = path.join(process.cwd(), 'public', `resume-${userId}.pdf`)
   const success = await sendEmail({
     to: contact.email, toName: contact.name,
     subject, html, pixelId,
     pixelBaseUrl: settings.pixelBaseUrl,
-    resumePath,
-  })
+    resumePath: resumeFile,
+  }, userId)
 
   if (success) {
     await prisma.contact.update({
@@ -179,51 +191,41 @@ async function sendNextInitial(settings: {
       data: { contactId: contact.id, type: 'initial', subject, body: html, pixelId },
     })
     await prisma.settings.update({
-      where: { id: 1 },
+      where: { userId },
       data: { sentToday: { increment: 1 } },
     })
-    console.log(`[Cron] Initial → ${contact.email} (${settings.sentToday + 1}/${settings.dailyLimit})`)
+    console.log(`[Cron] User ${userId} initial → ${contact.email} (${settings.sentToday + 1}/${settings.dailyLimit})`)
     return true
   }
 
   return false
 }
 
-// ─── Send one follow-up email (completion-based, no time gap) ────────────────
-// Only enters round N after round N-1 is 100% complete across all contacts.
-async function sendNextFollowUp(settings: {
+async function sendNextFollowUp(userId: number, settings: {
   gmailUser: string
   pixelBaseUrl: string
   linkedinUrl: string
   sentToday: number
   dailyLimit: number
 }): Promise<boolean> {
-  // Check follow-up rounds in order: 1 → 2 → 3 → 4 → 5
-  // For each round, find the oldest-waiting contact eligible for that round.
-  // If a round has any eligible contacts → send to them (don't skip to next round).
-  // Only when a round is fully exhausted do we move to the next.
-
   for (let round = 1; round <= TOTAL_FOLLOWUP_ROUNDS; round++) {
     const templateType = `followup_${round}`
-    const template = await prisma.template.findFirst({ where: { type: templateType } })
+    const template = await prisma.template.findFirst({ where: { type: templateType, userId } })
 
-    // Find contact eligible for this round:
-    // followUpCount === round means they've received exactly `round` emails so far
-    // (followUpCount 1 = initial sent, 2 = FU1 sent, etc.)
     const contact = await prisma.contact.findFirst({
       where: {
         status: 'sent',
         followUpCount: round,
-        company: { repliedAt: null },
+        company: { repliedAt: null, userId },
       },
       include: { company: true },
-      orderBy: { lastSentAt: 'asc' },  // oldest first = same order as initials
+      orderBy: { lastSentAt: 'asc' },
     })
 
-    if (!contact) continue  // this round fully done → check next round
+    if (!contact) continue
 
     if (!template) {
-      console.warn(`[Cron] No template for ${templateType} — skipping round ${round}`)
+      console.warn(`[Cron] User ${userId}: No template for ${templateType} — skipping round ${round}`)
       continue
     }
 
@@ -231,15 +233,14 @@ async function sendNextFollowUp(settings: {
     const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
     const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
 
-    // Attach resume to all follow-ups (only 51KB, no spam risk)
-    const resumePath = path.join(process.cwd(), 'public', 'resume.pdf')
+    const resumeFile = path.join(process.cwd(), 'public', `resume-${userId}.pdf`)
 
     const success = await sendEmail({
       to: contact.email, toName: contact.name,
       subject, html, pixelId,
       pixelBaseUrl: settings.pixelBaseUrl,
-      resumePath,
-    })
+      resumePath: resumeFile,
+    }, userId)
 
     if (success) {
       const newCount = contact.followUpCount + 1
@@ -248,7 +249,6 @@ async function sendNextFollowUp(settings: {
         data: {
           followUpCount: newCount,
           lastSentAt:    new Date(),
-          // Stop after all 5 follow-up rounds sent (followUpCount becomes 6)
           status:        newCount > TOTAL_FOLLOWUP_ROUNDS ? 'stopped' : 'sent',
         },
       })
@@ -256,10 +256,10 @@ async function sendNextFollowUp(settings: {
         data: { contactId: contact.id, type: templateType, subject, body: html, pixelId },
       })
       await prisma.settings.update({
-        where: { id: 1 },
+        where: { userId },
         data: { sentToday: { increment: 1 } },
       })
-      console.log(`[Cron] ${templateType} → ${contact.email} (round ${round}/${TOTAL_FOLLOWUP_ROUNDS})`)
+      console.log(`[Cron] User ${userId} ${templateType} → ${contact.email} (round ${round}/${TOTAL_FOLLOWUP_ROUNDS})`)
       return true
     }
   }
@@ -267,26 +267,21 @@ async function sendNextFollowUp(settings: {
   return false
 }
 
-// ─── Template personalisation ─────────────────────────────────────────────────
 function personalizeTemplate(
   template: string,
   vars: { companyName: string; hrName: string; linkedinUrl: string }
 ): string {
   return template
-    // Recipient name — bold in output
     .replace(/\{\{Recipient Name\}\}/gi, `<strong>${vars.hrName}</strong>`)
     .replace(/\{\{HR Name\}\}/gi,        `<strong>${vars.hrName}</strong>`)
     .replace(/\{\{hr_name\}\}/gi,        `<strong>${vars.hrName}</strong>`)
     .replace(/\{\{name\}\}/gi,           `<strong>${vars.hrName}</strong>`)
-    // Company name — bold in output
     .replace(/\{\{Company Name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
     .replace(/\{\{company_name\}\}/gi,   `<strong>${vars.companyName}</strong>`)
-    // LinkedIn — clickable hyperlink showing "LinkedIn" text (not the raw URL)
     .replace(/\{\{LinkedIn\}\}/gi,
       vars.linkedinUrl
         ? `<a href="${vars.linkedinUrl}" style="color:#2563eb;text-decoration:none">LinkedIn</a>`
         : '')
-    // **text** — bold (markdown-style in templates)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 }
 

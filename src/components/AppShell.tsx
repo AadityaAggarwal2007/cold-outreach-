@@ -34,6 +34,18 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="app-shell">
+      {/* ── Mobile top header ── */}
+      <header className="mobile-header">
+        <span style={{ fontSize: 20 }}>📬</span>
+        <span>InternReach</span>
+        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
+          fontSize: 11, color: paused ? '#ef4444' : '#10b981', fontWeight: 600 }}>
+          <span className={`pulse-dot ${paused ? 'red' : ''}`} style={{ width: 6, height: 6 }} />
+          {paused ? 'Paused' : 'Live'}
+        </span>
+      </header>
+
+      {/* ── Desktop sidebar ── */}
       <aside className="sidebar">
         <div className="sidebar-logo">
           <span style={{ fontSize: 22 }}>📬</span>
@@ -73,6 +85,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <main className="main-content">
         {children}
       </main>
+
+      {/* ── Mobile bottom nav ── */}
+      <nav className="mobile-nav">
+        <div className="mobile-nav-inner">
+          {NAV.map(item => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`mobile-nav-link ${pathname === item.href ? 'active' : ''}`}
+            >
+              {item.badgeKey === 'inboxNew' && inboxCount > 0 && (
+                <span className="mobile-badge">{inboxCount}</span>
+              )}
+              <span className="mobile-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </Link>
+          ))}
+          <button onClick={logout} className="mobile-nav-link" style={{ color: '#ef4444' }}>
+            <span className="mobile-nav-icon">🚪</span>
+            <span>Logout</span>
+          </button>
+        </div>
+      </nav>
     </div>
   )
 }

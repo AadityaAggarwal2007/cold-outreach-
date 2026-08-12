@@ -41,6 +41,8 @@ export default function InboxPage() {
   const [sending, setSending]           = useState(false)
   const [regenerating, setRegenerating] = useState(false)
   const [syncing, setSyncing]           = useState(false)
+  const [instructions, setInstructions] = useState('')
+  const [showInstructions, setShowInstructions] = useState(false)
   const [toast, setToast]               = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const [loading, setLoading]           = useState(true)
   const [activeTab, setActiveTab]       = useState<'inbox' | 'replied' | 'other' | 'bounced'>('inbox')
@@ -71,7 +73,11 @@ export default function InboxPage() {
   }, [load])
 
   useEffect(() => {
-    if (selected) setReplyText(selected.aiDraftReply || '')
+    if (selected) {
+      setReplyText(selected.aiDraftReply || '')
+      setInstructions('')
+      setShowInstructions(false)
+    }
   }, [selected])
 
   async function syncInbox() {
@@ -83,18 +89,23 @@ export default function InboxPage() {
     setSyncing(false)
   }
 
-  async function regenerateDraft() {
+  async function regenerateDraft(withInstructions = false) {
     if (!selected) return
     setRegenerating(true)
     const r = await fetch('/api/inbox/draft', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emailId: selected.id }),
+      body: JSON.stringify({
+        emailId: selected.id,
+        instructions: withInstructions ? instructions : '',
+      }),
     })
     const d = await r.json()
     if (d.draft) {
       setReplyText(d.draft)
       setSelected(prev => prev ? { ...prev, aiDraftReply: d.draft, aiStatus: 'draft_ready' } : prev)
+      setInstructions('')
+      setShowInstructions(false)
       showToast('New draft generated!')
     }
     setRegenerating(false)
@@ -328,12 +339,41 @@ export default function InboxPage() {
                     </span>
                     {selected.aiStatus !== 'no_reply' && (
                       <div className="flex gap-2">
-                        <button className="btn btn-ghost btn-sm" onClick={regenerateDraft} disabled={regenerating}>
+                        <button className="btn btn-ghost btn-sm"
+                          onClick={() => setShowInstructions(v => !v)}
+                          disabled={regenerating}
+                          title="Regenerate with specific instructions">
+                          ✏️ With changes
+                        </button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => regenerateDraft(false)} disabled={regenerating}>
                           {regenerating ? '⏳' : '🔄'} Regenerate
                         </button>
                       </div>
                     )}
                   </div>
+
+                  {showInstructions && (
+                    <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <textarea
+                        value={instructions}
+                        onChange={e => setInstructions(e.target.value)}
+                        placeholder="Describe what to change… e.g. 'Make it shorter', 'Add that I can join in June', 'Mention my CGPA is 9.1'"
+                        style={{
+                          width: '100%', minHeight: 72, padding: '10px 12px', borderRadius: 8,
+                          border: '1px solid var(--blue)', background: 'var(--bg-700)',
+                          color: 'var(--text)', fontSize: 13, lineHeight: 1.5, resize: 'vertical',
+                          outline: 'none', boxSizing: 'border-box',
+                        }}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => regenerateDraft(true)}
+                        disabled={regenerating || !instructions.trim()}
+                        style={{ alignSelf: 'flex-end' }}>
+                        {regenerating ? '⏳ Generating…' : '✨ Regenerate with these changes'}
+                      </button>
+                    </div>
+                  )}
 
                   {selected.aiStatus === 'no_reply' && (
                     <div style={{

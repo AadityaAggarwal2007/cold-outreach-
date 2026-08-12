@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -16,12 +17,13 @@ export default function LoginPage() {
       const res = await fetch('/api/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ username: username.trim().toLowerCase(), password }),
       })
       if (res.ok) {
         router.push('/')
       } else {
-        setError('Invalid password. Try again.')
+        const data = await res.json()
+        setError(data.error || 'Login failed.')
       }
     } catch {
       setError('Connection error.')
@@ -33,9 +35,9 @@ export default function LoginPage() {
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'radial-gradient(ellipse at center, #0f172a 0%, #030712 70%)',
+      padding: '0 16px',
     }}>
-      <div style={{ width: '100%', maxWidth: 380, padding: 20 }}>
-        {/* Logo */}
+      <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -43,9 +45,7 @@ export default function LoginPage() {
             borderRadius: 16, marginBottom: 16, fontSize: 24,
             boxShadow: '0 0 40px rgba(255,255,255,0.08)',
           }}>📬</div>
-          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#ffffff' }}>
-            InternReach
-          </h1>
+          <h1 style={{ fontSize: 26, fontWeight: 800, color: '#ffffff' }}>InternReach</h1>
           <p style={{ color: '#64748b', marginTop: 6, fontSize: 13.5 }}>Your AI outreach command centre</p>
         </div>
 
@@ -56,14 +56,27 @@ export default function LoginPage() {
             boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
           }}>
             <div className="form-group">
-              <label className="form-label">Dashboard Password</label>
+              <label className="form-label">Username</label>
+              <input
+                className="input"
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="Enter your username"
+                autoFocus
+                autoCapitalize="none"
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Password</label>
               <input
                 className="input"
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                autoFocus
                 required
               />
             </div>

@@ -16,13 +16,13 @@ export const prisma = globalForPrisma.prisma || createPrismaClient()
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
-// Seed default settings row if it doesn't exist
-export async function ensureSettings() {
+// Ensure settings exist for a given userId
+export async function ensureSettings(userId = 1) {
   return await prisma.settings.upsert({
-    where: { id: 1 },
+    where: { userId },
     update: {},
     create: {
-      id: 1,
+      userId,
       gmailUser: process.env.GMAIL_USER || '',
       gmailAppPass: process.env.GMAIL_APP_PASSWORD || '',
       pixelBaseUrl: process.env.PIXEL_BASE_URL || '',

@@ -16,7 +16,8 @@ export async function classifyAndDraftReply(
   subject: string,
   fromName: string,
   companyId: number | null,
-  fromEmail: string = ''
+  fromEmail: string = '',
+  userId = 1
 ): Promise<void> {
   try {
     await prisma.incomingEmail.update({
@@ -24,7 +25,7 @@ export async function classifyAndDraftReply(
       data: { aiStatus: 'classifying' },
     })
 
-    const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+    const settings = await prisma.settings.findUnique({ where: { userId } })
     const model    = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
     const client   = getClient(settings)
 
@@ -69,7 +70,6 @@ Reply with ONLY one word: INTERNSHIP or REPLY_NEEDED or NO_REPLY`
     // ── Step 2: Handle each category ─────────────────────────────────────────
 
     if (category === 'NO_REPLY') {
-      // Get a short reason why no reply is needed
       const reasonRes = await client.chat.completions.create({
         model,
         messages: [
@@ -104,7 +104,16 @@ Reply with ONLY the reason sentence, no extra text.`
       const domain = fromEmail.split('@')[1] || ''
       const companyNameFromDomain = domain.split('.')[0] || fromName
 
-      const contacts = await prisma.contact.findMany({ select: { email: true, companyId: true } })
+      // Only search within this user's contacts
+      const userCompanyIds = (await prisma.company.findMany({
+        where: { userId },
+        select: { id: true },
+      })).map(c => c.id)
+
+      const contacts = await prisma.contact.findMany({
+        where: { companyId: { in: userCompanyIds } },
+        select: { email: true, companyId: true },
+      })
       for (const c of contacts) {
         if (c.email.toLowerCase().endsWith('@' + domain)) {
           resolvedCompanyId = c.companyId
@@ -128,13 +137,13 @@ Reply with ONLY the company name (2-4 words). If unclear, use the email domain n
 
         try {
           const newCompany = await prisma.company.create({
-            data: { name: aiCompanyName, stage: 'replied', repliedAt: new Date() },
+            data: { userId, name: aiCompanyName, stage: 'replied', repliedAt: new Date() },
           })
           resolvedCompanyId = newCompany.id
-          console.log(`[AI] Created company: "${aiCompanyName}"`)
+          console.log(`[AI] Created company for user ${userId}: "${aiCompanyName}"`)
         } catch {
           const found = await prisma.company.findFirst({
-            where: { name: { contains: companyNameFromDomain } },
+            where: { userId, name: { contains: companyNameFromDomain } },
           })
           if (found) resolvedCompanyId = found.id
         }
@@ -219,11 +228,15 @@ Rules:
 }
 
 // ─── Re-generate a draft on demand ───────────────────────────────────────────
-export async function regenerateDraft(incomingEmailId: number): Promise<string> {
+export async function regenerateDraft(
+  incomingEmailId: number,
+  userId: number,
+  instructions?: string
+): Promise<string> {
   const email = await prisma.incomingEmail.findFirst({ where: { id: incomingEmailId } })
   if (!email) throw new Error('Email not found')
 
-  const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+  const settings = await prisma.settings.findUnique({ where: { userId } })
   const model    = settings?.aiModel || process.env.OPENAI_MODEL || 'gpt-5.6-sol'
   const client   = getClient(settings)
 
@@ -236,6 +249,10 @@ export async function regenerateDraft(incomingEmailId: number): Promise<string> 
     const company = await prisma.company.findFirst({ where: { id: email.companyId } })
     if (company) companyName = company.name
   }
+
+  const instructionBlock = instructions?.trim()
+    ? `\n\nSpecific changes requested by the user:\n"${instructions.trim()}"\nApply these changes carefully.`
+    : ''
 
   const res = await client.chat.completions.create({
     model,
@@ -250,7 +267,7 @@ Subject: "${email.subject}"
 ${email.body.substring(0, 2000)}
 """
 
-Under 130 words. Output only HTML body using <p> tags. Sign as Aaditya Aggarwal.`
+Under 130 words. Output only HTML body using <p> tags. Sign as Aaditya Aggarwal.${instructionBlock}`
       }
     ],
     max_tokens: 500,

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import * as XLSX from 'xlsx'
 
 export async function POST(req: NextRequest) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
   try {
     const formData = await req.formData()
@@ -20,7 +21,6 @@ export async function POST(req: NextRequest) {
     let imported = 0
     let skipped = 0
 
-    // Group by company first
     const companyMap = new Map<string, Array<{ name: string; email: string; phone: string; tier: string; status: string }>>()
 
     let lastCompanyName = ''
@@ -28,7 +28,6 @@ export async function POST(req: NextRequest) {
     let lastStatus = ''
 
     for (const row of rows) {
-      // Carry forward company name for blank continuation rows (Excel merged cells)
       const rawCompany = (row['Company'] || '').trim()
       if (rawCompany) {
         lastCompanyName = rawCompany
@@ -42,32 +41,21 @@ export async function POST(req: NextRequest) {
       const email       = (row['Email'] || '').toString().trim().toLowerCase()
       const phone       = (row['Phone Number'] || '').toString().trim()
 
-      // Skip rows with no email or obviously invalid emails
       if (!email || !email.includes('@') || email.startsWith('-')) continue
 
-      if (!companyMap.has(companyName)) {
-        companyMap.set(companyName, [])
-      }
+      if (!companyMap.has(companyName)) companyMap.set(companyName, [])
       companyMap.get(companyName)!.push({
         name: contactName || email.split('@')[0],
-        email,
-        phone,
-        tier: lastTier,
-        status: lastStatus,
+        email, phone, tier: lastTier, status: lastStatus,
       })
     }
 
-    // Upsert companies and contacts
     for (const [companyName, contacts] of companyMap) {
       const firstContact = contacts[0]
       const company = await prisma.company.upsert({
-        where: { name: companyName },
+        where: { userId_name: { userId, name: companyName } },
         update: {},
-        create: {
-          name: companyName,
-          tier: firstContact.tier,
-          statusSeen: firstContact.status,
-        },
+        create: { userId, name: companyName, tier: firstContact.tier, statusSeen: firstContact.status },
       })
 
       for (const c of contacts) {
@@ -76,12 +64,7 @@ export async function POST(req: NextRequest) {
           await prisma.contact.upsert({
             where: { email: c.email },
             update: {},
-            create: {
-              companyId: company.id,
-              name: c.name,
-              email: c.email,
-              phone: c.phone || null,
-            },
+            create: { companyId: company.id, name: c.name, email: c.email, phone: c.phone || null },
           })
           imported++
         } catch {
@@ -90,40 +73,30 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({
-      success: true,
-      imported,
-      skipped,
-      companies: companyMap.size,
-    })
+    return NextResponse.json({ success: true, imported, skipped, companies: companyMap.size })
   } catch (err) {
     console.error('[Import] Error:', err)
     return NextResponse.json({ error: 'Import failed' }, { status: 500 })
   }
 }
 
-// DELETE — wipe all contacts, email logs, and companies for a fresh import
 export async function DELETE(req: NextRequest) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
   try {
-    // Delete in dependency order (EmailLog → Contact → Company)
-    const [logs, contacts, companies] = await Promise.all([
-      prisma.emailLog.deleteMany({}),
-      prisma.contact.deleteMany({}),
-    ]).then(async ([logs, contacts]) => {
-      const companies = await prisma.company.deleteMany({})
-      return [logs, contacts, companies]
-    })
+    const userCompanyIds = (await prisma.company.findMany({ where: { userId }, select: { id: true } })).map(c => c.id)
+
+    const logs = await prisma.emailLog.deleteMany({ where: { contact: { companyId: { in: userCompanyIds } } } })
+    const contacts = await prisma.contact.deleteMany({ where: { companyId: { in: userCompanyIds } } })
+    const companies = await prisma.company.deleteMany({ where: { userId } })
 
     return NextResponse.json({
       success: true,
       deleted: { emailLogs: logs.count, contacts: contacts.count, companies: companies.count },
-      message: `Cleared ${contacts.count} contacts from ${companies.count} companies`,
     })
   } catch (err) {
-    console.error('[Import/DELETE] Error:', err)
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }

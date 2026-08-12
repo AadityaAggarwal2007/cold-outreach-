@@ -1,29 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-// Toggle pause/resume sending
 export async function POST(req: NextRequest) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
-  const { action } = await req.json() // "pause" | "resume" | "reset-daily"
+  const { action } = await req.json()
 
   if (action === 'pause') {
-    await prisma.settings.update({ where: { id: 1 }, data: { sendingPaused: true } })
+    await prisma.settings.upsert({
+      where: { userId },
+      update: { sendingPaused: true },
+      create: { userId, sendingPaused: true },
+    })
     return NextResponse.json({ success: true, paused: true })
   }
 
   if (action === 'resume') {
-    await prisma.settings.update({ where: { id: 1 }, data: { sendingPaused: false } })
+    await prisma.settings.upsert({
+      where: { userId },
+      update: { sendingPaused: false },
+      create: { userId, sendingPaused: false },
+    })
     return NextResponse.json({ success: true, paused: false })
   }
 
   if (action === 'reset-daily') {
     const today = new Date().toISOString().split('T')[0]
-    await prisma.settings.update({
-      where: { id: 1 },
-      data: { sentToday: 0, lastResetDate: today },
+    await prisma.settings.upsert({
+      where: { userId },
+      update: { sentToday: 0, lastResetDate: today },
+      create: { userId, sentToday: 0, lastResetDate: today },
     })
     return NextResponse.json({ success: true, reset: true })
   }
@@ -31,15 +40,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }
 
-// GET campaign queue stats
 export async function GET(req: NextRequest) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
-  const settings = await prisma.settings.findFirst({ where: { id: 1 } })
+  const settings = await prisma.settings.findUnique({ where: { userId } })
 
-  // Exclude the internal test company from all stats
-  const NOT_TEST = { name: { not: '_InternReach Test_' } }
+  const NOT_TEST = { name: { not: '_InternReach Test_' }, userId }
   const NOT_TEST_CONTACT = { company: NOT_TEST }
 
   const [
@@ -68,14 +76,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     settings,
-    totalCompanies,
-    totalContacts,
-    pendingInitial,
-    sentContacts,
-    stoppedContacts,
-    bouncedContacts,
-    openedContacts,
-    repliedCompanies,
-    pendingFollowUps,
+    totalCompanies, totalContacts, pendingInitial,
+    sentContacts, stoppedContacts, bouncedContacts,
+    openedContacts, repliedCompanies, pendingFollowUps,
   })
 }

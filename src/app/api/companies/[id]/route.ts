@@ -1,27 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAuth } from '@/lib/auth'
+import { getUserId } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
-// GET /api/companies/[id]
-export async function GET(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
   const { id } = await params
   const company = await prisma.company.findFirst({
-    where: { id: parseInt(id) },
+    where: { id: parseInt(id), userId },
     include: {
-      contacts: {
-        include: {
-          emailLogs: { orderBy: { sentAt: 'desc' } },
-        },
-      },
-      incomingEmails: {
-        orderBy: { receivedAt: 'desc' },
-      },
+      contacts: { include: { emailLogs: { orderBy: { sentAt: 'desc' } } } },
+      incomingEmails: { orderBy: { receivedAt: 'desc' } },
     },
   })
 
@@ -29,20 +20,16 @@ export async function GET(
   return NextResponse.json(company)
 }
 
-// PATCH /api/companies/[id] — update stage
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const authError = await requireAuth(req)
-  if (authError) return authError
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const userIdOrRedirect = await getUserId(req)
+  if (userIdOrRedirect instanceof NextResponse) return userIdOrRedirect
+  const userId = userIdOrRedirect
 
   const { id } = await params
-  const body = await req.json()
-  const { stage } = body
+  const { stage } = await req.json()
 
   const updated = await prisma.company.update({
-    where: { id: parseInt(id) },
+    where: { id: parseInt(id), userId },
     data: { stage },
   })
 
