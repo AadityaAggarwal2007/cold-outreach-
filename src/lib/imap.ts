@@ -92,6 +92,7 @@ export async function syncInbox(userId: number) {
         }
         await prisma.incomingEmail.create({
           data: {
+            userId,
             fromEmail: fromAddr, fromName: 'Mail Delivery (Bounce)',
             subject: `⚠️ Bounce: ${bouncedAddr || subject}`,
             body: `Email to ${bouncedAddr || 'unknown'} could not be delivered.\n\n` +
@@ -134,11 +135,9 @@ export async function syncInbox(userId: number) {
         }
       }
 
-      // Only save emails that match this user's companies (ignore unmatched)
-      if (!companyId) continue
-
       const incoming = await prisma.incomingEmail.create({
         data: {
+          userId,
           companyId,
           fromEmail: fromAddr,
           fromName,

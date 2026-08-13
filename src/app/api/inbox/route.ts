@@ -10,13 +10,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const companyId = searchParams.get('companyId')
 
-  const userCompanyIds = (await prisma.company.findMany({
-    where: { userId },
-    select: { id: true },
-  })).map(c => c.id)
-
   const where: Record<string, unknown> = {
-    companyId: { in: userCompanyIds },
+    userId,
     aiStatus: { notIn: ['irrelevant'] },
   }
   if (companyId) where.companyId = parseInt(companyId)

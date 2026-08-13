@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     }),
     prisma.incomingEmail.count({
       where: {
-        companyId: { in: userCompanyIds },
+        userId,
         aiStatus: { in: ['new', 'draft_ready'] },
       },
     }),
