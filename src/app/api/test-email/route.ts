@@ -19,6 +19,15 @@ function personalize(template: string, vars: { companyName: string; hrName: stri
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 }
 
+function personalizeSubject(template: string, vars: { companyName: string; hrName: string }) {
+  return template
+    .replace(/\{\{Recipient Name\}\}/gi, vars.hrName)
+    .replace(/\{\{HR Name\}\}/gi,        vars.hrName)
+    .replace(/\{\{name\}\}/gi,           vars.hrName)
+    .replace(/\{\{Company Name\}\}/gi,   vars.companyName)
+    .replace(/\{\{company_name\}\}/gi,   vars.companyName)
+}
+
 async function ensureTestContact(userId: number, toEmail: string, toName: string) {
   const company = await prisma.company.upsert({
     where:  { userId_name: { userId, name: '_InternReach Test_' } },
@@ -79,7 +88,7 @@ export async function POST(req: NextRequest) {
       }
 
       const html     = personalize(tpl.htmlBody, vars)
-      const subject  = personalize(tpl.subject, vars)
+      const subject  = personalizeSubject(tpl.subject, { companyName: vars.companyName, hrName: vars.hrName })
       const pixelId  = uuidv4()
       const resumePath = path.join(process.cwd(), 'public', `resume-${userId}.pdf`)
 
