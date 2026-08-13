@@ -60,7 +60,7 @@ function htmlToPlainText(html: string): string {
 function wrapInEmailHtml(body: string): string {
   if (body.toLowerCase().includes('<html')) return body
   const htmlBody = body
-    .replace(/\n\n/g, '</p><p style="margin:0 0 16px 0;">')
+    .replace(/\n\n/g, '</p><p style="margin:0 0 10px 0;">')
     .replace(/\n/g, '<br/>')
   return `<!DOCTYPE html>
 <html lang="en">
@@ -68,9 +68,9 @@ function wrapInEmailHtml(body: string): string {
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 </head>
-<body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#1a1a1a;">
-<div style="max-width:600px;margin:0 auto;padding:24px 16px;">
-<p style="margin:0 0 16px 0;">${htmlBody}</p>
+<body style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;color:#1a1a1a;">
+<div style="max-width:600px;margin:0 auto;padding:20px 16px;">
+<p style="margin:0 0 10px 0;">${htmlBody}</p>
 </div>
 </body>
 </html>`
@@ -90,8 +90,11 @@ export async function sendEmail(opts: SendOptions, userId: number): Promise<bool
     const finalHtml   = wrappedHtml.replace('</body>', `${pixelHtml}</body>`)
     const plainText   = htmlToPlainText(opts.html)
 
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    const displayName = user?.displayName || fromUser.split('@')[0]
+
     const mailOptions: nodemailer.SendMailOptions = {
-      from: `"Aaditya Aggarwal" <${fromUser}>`,
+      from: `"${displayName}" <${fromUser}>`,
       to: `"${opts.toName}" <${opts.to}>`,
       subject: opts.subject,
       text: plainText,
@@ -103,7 +106,7 @@ export async function sendEmail(opts: SendOptions, userId: number): Promise<bool
 
     if (opts.resumePath) {
       mailOptions.attachments = [
-        { filename: 'Resume - Aaditya Aggarwal.pdf', path: opts.resumePath },
+        { filename: `Resume - ${displayName}.pdf`, path: opts.resumePath },
       ]
     }
 

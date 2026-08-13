@@ -172,7 +172,7 @@ async function sendNextInitial(userId: number, settings: {
 
   const pixelId = uuidv4()
   const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
-  const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
+  const subject = personalizeSubject(template.subject,  { companyName: contact.company.name, hrName: contact.name })
 
   const resumeFile = path.join(process.cwd(), 'public', `resume-${userId}.pdf`)
   const success = await sendEmail({
@@ -231,7 +231,7 @@ async function sendNextFollowUp(userId: number, settings: {
 
     const pixelId = uuidv4()
     const html    = personalizeTemplate(template.htmlBody, { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
-    const subject = personalizeTemplate(template.subject,  { companyName: contact.company.name, hrName: contact.name, linkedinUrl: settings.linkedinUrl })
+    const subject = personalizeSubject(template.subject,  { companyName: contact.company.name, hrName: contact.name })
 
     const resumeFile = path.join(process.cwd(), 'public', `resume-${userId}.pdf`)
 
@@ -283,6 +283,19 @@ function personalizeTemplate(
         ? `<a href="${vars.linkedinUrl}" style="color:#2563eb;text-decoration:none">LinkedIn</a>`
         : '')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+}
+
+function personalizeSubject(
+  template: string,
+  vars: { companyName: string; hrName: string }
+): string {
+  return template
+    .replace(/\{\{Recipient Name\}\}/gi, vars.hrName)
+    .replace(/\{\{HR Name\}\}/gi,        vars.hrName)
+    .replace(/\{\{hr_name\}\}/gi,        vars.hrName)
+    .replace(/\{\{name\}\}/gi,           vars.hrName)
+    .replace(/\{\{Company Name\}\}/gi,   vars.companyName)
+    .replace(/\{\{company_name\}\}/gi,   vars.companyName)
 }
 
 export function stopCron() {
