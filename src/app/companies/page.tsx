@@ -92,7 +92,7 @@ export default function CompaniesPage() {
       {/* Split Pane */}
       <div className="split-pane">
         {/* LEFT — Company List */}
-        <div className="split-left">
+        <div className={`split-left${selected ? ' mobile-hide-when-selected' : ''}`}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
             <div className="search-wrap">
               <span className="search-icon">🔍</span>
@@ -162,21 +162,22 @@ export default function CompaniesPage() {
             </div>
           ) : (
             <>
+              <button className="mobile-back-btn" onClick={() => setSelected(null)}>← Back to list</button>
               {/* Company Header */}
-              <div className="flex justify-between items-center mb-4">
-                <div>
-                  <h2 style={{ fontSize: 22, fontWeight: 800 }}>{selected.name}</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <h2 style={{ fontSize: 18, fontWeight: 800, wordBreak: 'break-word' }}>{selected.name}</h2>
                   <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
                     {selected.tier} • {selected._count.contacts} HR contacts
                     {selected.repliedAt && <span style={{ color: 'var(--green)', marginLeft: 8 }}>✓ Replied {new Date(selected.repliedAt).toLocaleDateString()}</span>}
                   </p>
                 </div>
                 {/* Kanban Stage Selector */}
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                   {STAGES.map(s => (
                     <button key={s.key} onClick={() => updateStage(selected.id, s.key)}
                       style={{
-                        padding: '5px 12px', borderRadius: 20, fontSize: 12, fontWeight: 600,
+                        padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600,
                         cursor: 'pointer', border: `2px solid ${selected.stage === s.key ? s.color : 'transparent'}`,
                         background: selected.stage === s.key ? s.bg : 'var(--bg-700)',
                         color: selected.stage === s.key ? s.color : 'var(--text-muted)',

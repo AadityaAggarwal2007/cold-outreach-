@@ -123,6 +123,9 @@ export default function SettingsPage() {
 
   // Send Now state
   const [sendingNow, setSendingNow] = useState(false)
+  // Bounce cleanup state
+  const [cleaningBounces, setCleaningBounces] = useState(false)
+  const [bounceCleanResult, setBounceCleanResult] = useState<string | null>(null)
   // Test email pixel tracking
   const [testPixelIds, setTestPixelIds] = useState<Record<string, string>>({})
   const [testOpenStatus, setTestOpenStatus] = useState<Record<string, { openedAt: string | null; openCount: number }>>({})
@@ -393,6 +396,35 @@ Reply style: professional but warm, under 120 words, sign as Aaditya Aggarwal.`}
             }}>
             {sendingNow ? '⏳ Triggering...' : '⚡ Trigger Send Cycle Now'}
           </button>
+        </div>
+
+        {/* ─── Bounce Cleanup ─────────────────────────────────────────── */}
+        <div className="card mb-4" style={{ border:'1px solid rgba(239,68,68,0.3)', background:'rgba(239,68,68,0.04)' }}>
+          <div className="card-header"><span className="card-title">🗑 Delete Bounced Emails from Gmail</span></div>
+          <p style={{ fontSize: 13, color:'var(--text-muted)', marginBottom: 14 }}>
+            Scans your Gmail inbox (last 90 days) and permanently deletes all bounce/NDR notification emails
+            (mailer-daemon, delivery failures, undeliverable). Future bounces are auto-deleted during sync.
+          </p>
+          <button
+            className="btn"
+            style={{ background:'rgba(239,68,68,0.2)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.4)', fontWeight: 700 }}
+            disabled={cleaningBounces}
+            onClick={async () => {
+              setCleaningBounces(true)
+              setBounceCleanResult(null)
+              try {
+                const r = await fetch('/api/bounce-cleanup', { method: 'POST' })
+                const d = await r.json()
+                setBounceCleanResult(`Deleted ${d.deleted} bounce emails from Gmail`)
+                showToast(`🗑 Deleted ${d.deleted} bounce emails!`)
+              } catch { showToast('❌ Network error', 'error') }
+              setCleaningBounces(false)
+            }}>
+            {cleaningBounces ? '⏳ Scanning & Deleting...' : '🗑 Clean Up Bounced Emails'}
+          </button>
+          {bounceCleanResult && (
+            <div style={{ marginTop: 10, fontSize: 13, color: '#10b981', fontWeight: 600 }}>{bounceCleanResult}</div>
+          )}
         </div>
 
         {/* ─── Test Email ────────────────────────────────────────────── */}

@@ -101,6 +101,15 @@ export async function syncInbox(userId: number) {
             aiStatus: 'bounced',
           },
         }).catch(() => {})
+
+        // Delete the bounce NDR email from Gmail inbox
+        try {
+          await client!.messageDelete(msg.uid.toString(), { uid: true })
+          console.log(`[IMAP] Deleted bounce NDR for ${bouncedAddr || subject} from Gmail`)
+        } catch (delErr) {
+          console.error(`[IMAP] Failed to delete bounce NDR:`, delErr)
+        }
+
         continue
       }
 
@@ -166,6 +175,60 @@ export async function syncInbox(userId: number) {
   }
 }
 
+
+// Delete all existing bounce/NDR emails from Gmail inbox
+export async function deleteBouncedFromGmail(userId: number) {
+  let client: ImapFlow | null = null
+  let deleted = 0
+  try {
+    client = await getImapClient(userId)
+    await client.connect()
+    await client.mailboxOpen('INBOX')
+
+    const since = new Date()
+    since.setDate(since.getDate() - 90)
+
+    const rawMessages: Array<{ uid: number; source: Buffer; envelope: { messageId?: string } }> = []
+
+    for await (const msg of client.fetch({ since }, { envelope: true, source: true, uid: true })) {
+      rawMessages.push(msg as typeof rawMessages[0])
+    }
+
+    for (const msg of rawMessages) {
+      const parsed = await simpleParser(msg.source)
+      const fromAddr = parsed.from?.value?.[0]?.address?.toLowerCase() || ''
+      const subject  = parsed.subject || ''
+
+      const isNDR = fromAddr.includes('mailer-daemon') ||
+                    fromAddr.includes('postmaster@') ||
+                    fromAddr.startsWith('postmaster') ||
+                    subject.toLowerCase().includes('delivery status notification') ||
+                    subject.toLowerCase().includes('mail delivery failed') ||
+                    subject.toLowerCase().includes('delivery failure') ||
+                    subject.toLowerCase().includes('undeliverable')
+
+      if (isNDR) {
+        try {
+          await client.messageDelete(String(msg.uid), { uid: true })
+          deleted++
+          console.log(`[IMAP] Cleanup: deleted NDR "${subject.substring(0, 50)}" from Gmail`)
+        } catch (delErr) {
+          console.error(`[IMAP] Cleanup: failed to delete NDR:`, delErr)
+        }
+      }
+    }
+
+    console.log(`[IMAP] User ${userId}: cleaned up ${deleted} bounce NDRs from Gmail (scanned ${rawMessages.length})`)
+    return deleted
+  } catch (err) {
+    console.error(`[IMAP] Cleanup error for user ${userId}:`, err)
+    return deleted
+  } finally {
+    if (client) {
+      try { await client.logout() } catch {}
+    }
+  }
+}
 
 function extractBouncedEmail(body: string): string | null {
   const patterns = [

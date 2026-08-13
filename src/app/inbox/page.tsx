@@ -197,8 +197,8 @@ export default function InboxPage() {
       </div>
 
       <div className="split-pane">
-        {/* LEFT — Email list */}
-        <div className="split-left">
+        {/* LEFT — Email list (hidden on mobile when email selected) */}
+        <div className={`split-left ${selected ? 'mobile-hide-when-selected' : ''}`}>
           {loading ? (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted)' }}>Loading…</div>
           ) : visibleList.length === 0 ? (
@@ -246,7 +246,7 @@ export default function InboxPage() {
         </div>
 
         {/* RIGHT — Email detail */}
-        <div className="split-right">
+        <div className={`split-right ${selected ? 'mobile-show-when-selected' : ''}`}>
           {!selected ? (
             <div className="empty-state" style={{ marginTop: 80 }}>
               <div className="empty-icon">📬</div>
@@ -255,23 +255,32 @@ export default function InboxPage() {
             </div>
           ) : (
             <>
+              {/* Back button (mobile only) */}
+              <button
+                className="mobile-back-btn"
+                onClick={() => setSelected(null)}>
+                ← Back to list
+              </button>
+
               {/* Email Header */}
               <div className="card mb-4">
-                <div className="flex justify-between items-center" style={{ marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{selected.fromName || selected.fromEmail}</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 12.5 }}>{selected.fromEmail}</div>
-                    {selected.company && (
-                      <div style={{ color: '#fff', fontSize: 12.5, marginTop: 2 }}>🏢 {selected.company.name}</div>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'right' }}>
-                    {new Date(selected.receivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    {selected.replied && <div style={{ color: 'var(--green)', fontWeight: 600, marginTop: 4 }}>✓ Replied</div>}
-                    {selected.aiStatus === 'bounced' && <div style={{ color: 'var(--red)', fontWeight: 600, marginTop: 4 }}>⚠️ Invalid Email</div>}
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, wordBreak: 'break-word' }}>{selected.fromName || selected.fromEmail}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: 11.5, wordBreak: 'break-all' }}>{selected.fromEmail}</div>
+                      {selected.company && (
+                        <div style={{ color: '#fff', fontSize: 11.5, marginTop: 2 }}>🏢 {selected.company.name}</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'right', flexShrink: 0 }}>
+                      {new Date(selected.receivedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {selected.replied && <div style={{ color: 'var(--green)', fontWeight: 600, marginTop: 3 }}>✓ Replied</div>}
+                      {selected.aiStatus === 'bounced' && <div style={{ color: 'var(--red)', fontWeight: 600, marginTop: 3 }}>⚠️ Invalid</div>}
+                    </div>
                   </div>
                 </div>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>{selected.subject}</div>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, wordBreak: 'break-word' }}>{selected.subject}</div>
 
                 {/* Toggle: Rendered / Plain text */}
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -333,12 +342,12 @@ export default function InboxPage() {
               {/* AI Draft Reply */}
               {!selected.replied && selected.aiStatus !== 'bounced' && (
                 <div className="card">
-                  <div className="card-header">
+                  <div className="card-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                     <span className="card-title">
                       {selected.aiStatus === 'no_reply' ? '🚫 No Reply Needed' : '✨ AI Draft Reply'}
                     </span>
                     {selected.aiStatus !== 'no_reply' && (
-                      <div className="flex gap-2">
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button className="btn btn-ghost btn-sm"
                           onClick={() => setShowInstructions(v => !v)}
                           disabled={regenerating}

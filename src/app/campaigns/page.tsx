@@ -65,21 +65,21 @@ function CompanyRow({ company }: { company: Company }) {
       {/* Company header row */}
       <div
         onClick={() => setOpen(o => !o)}
-        style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', cursor:'pointer', userSelect:'none' }}
+        style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', cursor:'pointer', userSelect:'none', gap: 8, flexWrap: 'wrap' }}
       >
-        <div style={{ display:'flex', alignItems:'center', gap: 12 }}>
-          <span style={{ fontSize: 16, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display:'inline-block', color:'var(--text-muted)' }}>▶</span>
-          <div>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{company.name}</span>
-            {company.tier && <span style={{ fontSize: 11, color:'var(--text-muted)', marginLeft: 8 }}>{company.tier}</span>}
+        <div style={{ display:'flex', alignItems:'center', gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 14, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display:'inline-block', color:'var(--text-muted)', flexShrink: 0 }}>▶</span>
+          <div style={{ minWidth: 0 }}>
+            <span style={{ fontWeight: 700, fontSize: 13, wordBreak: 'break-word' }}>{company.name}</span>
+            {company.tier && <span style={{ fontSize: 10, color:'var(--text-muted)', marginLeft: 6 }}>{company.tier}</span>}
           </div>
         </div>
-        <div style={{ display:'flex', alignItems:'center', gap: 16, fontSize: 12 }}>
-          {replied && <span style={{ color:'#10b981', fontWeight: 700 }}>↩ Replied</span>}
-          {totalOpened > 0 && <span style={{ color:'#10b981' }}>👁 {totalOpened} open</span>}
-          <span style={{ color:'var(--text-muted)' }}>📧 {totalSent} sent</span>
-          <span style={{ color:'var(--text-muted)' }}>👥 {company._count.contacts} HRs</span>
-          <span style={{ padding:'2px 8px', borderRadius: 10, fontSize: 11, fontWeight: 600, background: replied ? 'rgba(16,185,129,0.15)' : totalSent > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.15)', color: replied ? '#10b981' : totalSent > 0 ? '#3b82f6' : 'var(--text-muted)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap: 8, fontSize: 11, flexWrap:'wrap', flexShrink: 0 }}>
+          {replied && <span style={{ color:'#10b981', fontWeight: 700 }}>↩</span>}
+          {totalOpened > 0 && <span style={{ color:'#10b981' }}>👁{totalOpened}</span>}
+          <span style={{ color:'var(--text-muted)' }}>📧{totalSent}</span>
+          <span style={{ color:'var(--text-muted)' }}>👥{company._count.contacts}</span>
+          <span style={{ padding:'2px 6px', borderRadius: 10, fontSize: 10, fontWeight: 600, background: replied ? 'rgba(16,185,129,0.15)' : totalSent > 0 ? 'rgba(59,130,246,0.15)' : 'rgba(100,116,139,0.15)', color: replied ? '#10b981' : totalSent > 0 ? '#3b82f6' : 'var(--text-muted)' }}>
             {replied ? 'Replied' : totalSent > 0 ? 'Active' : 'Pending'}
           </span>
         </div>
